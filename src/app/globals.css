@@ -220,3 +220,15 @@ blockquote {
   border-radius: 0 4px 4px 0;
   padding: 1rem 1rem 1rem 1.5rem;
 }
+
+/* Chat typing indicator animation */
+@keyframes typing-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-10px);
+    opacity: 1;
+  }
+}

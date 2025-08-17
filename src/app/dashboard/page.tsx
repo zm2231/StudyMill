@@ -5,12 +5,18 @@ import { IconUser, IconLogout, IconSettings } from '@tabler/icons-react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { UserProfile } from '@/components/auth/UserProfile';
 import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from 'next/navigation';
 
 export default function DashboardPage() {
   const { user, logout } = useAuth();
+  const router = useRouter();
 
   const handleLogout = async () => {
     await logout();
+  };
+
+  const handleStartChat = () => {
+    router.push('/chat');
   };
 
   return (
@@ -139,6 +145,7 @@ export default function DashboardPage() {
                         border: '1px solid var(--border-light)',
                         cursor: 'pointer',
                       }}
+                      onClick={handleStartChat}
                     >
                       <Group justify="space-between">
                         <Stack gap={4}>
@@ -150,11 +157,11 @@ export default function DashboardPage() {
                         <Badge
                           variant="light"
                           style={{
-                            backgroundColor: 'var(--warm-sand)',
-                            color: 'var(--warm-brown)',
+                            backgroundColor: 'var(--forest-green-light)',
+                            color: 'var(--forest-green-primary)',
                           }}
                         >
-                          Coming Soon
+                          Available
                         </Badge>
                       </Group>
                     </Card>
