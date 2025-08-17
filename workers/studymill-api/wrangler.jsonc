@@ -1,0 +1,90 @@
+/**
+ * StudyMill API Worker Configuration
+ * For more details: https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "studymill-api",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-08-16",
+	"compatibility_flags": [
+		"global_fetch_strictly_public",
+		"nodejs_compat"
+	],
+	"observability": {
+		"enabled": true
+	},
+	"placement": { 
+		"mode": "smart" 
+	},
+	
+	// Environment-specific configurations
+	"env": {
+		"development": {
+			"vars": {
+				"ENVIRONMENT": "development",
+				"API_VERSION": "v1.0.0-dev",
+				"FRONTEND_URL": "http://localhost:3000"
+			}
+		},
+		"staging": {
+			"vars": {
+				"ENVIRONMENT": "staging",
+				"API_VERSION": "v1.0.0-staging",
+				"FRONTEND_URL": "https://staging.studymill.ai"
+			}
+		},
+		"production": {
+			"vars": {
+				"ENVIRONMENT": "production",
+				"API_VERSION": "v1.0.0",
+				"FRONTEND_URL": "https://studymill.ai"
+			}
+		}
+	},
+	
+	// D1 Database configuration
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "studymill-db",
+			"database_id": "ca164867-850c-46ca-bd89-597484b715d7"
+		}
+	],
+	
+	// R2 Storage configuration
+	"r2_buckets": [
+		{
+			"binding": "BUCKET",
+			"bucket_name": "studymill-documents"
+		}
+	],
+	
+	// Vectorize configuration
+	"vectorize": [
+		{
+			"binding": "VECTORIZE",
+			"index_name": "studymill-embeddings"
+		}
+	],
+	
+	/**
+	 * Additional Cloudflare services (to be configured later)
+	 * 
+	 * KV Storage:
+	 * "kv_namespaces": [
+	 *   { "binding": "KV", "id": "...", "preview_id": "..." }
+	 * ]
+	 * 
+	 * Vectorize:
+	 * "vectorize": [
+	 *   { "binding": "VECTORIZE", "index_name": "studymill-embeddings" }
+	 * ]
+	 * 
+	 * Secrets (set via wrangler secret put):
+	 * - JWT_SECRET
+	 * - GOOGLE_API_KEY (for Gemini)
+	 * - GROQ_API_KEY (for Whisper)
+	 * - PARSE_EXTRACT_API_KEY
+	 */
+}
