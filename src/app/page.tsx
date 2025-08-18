@@ -27,20 +27,12 @@ import {
   IconCheck
 } from "@tabler/icons-react";
 import { useAuth } from '@/hooks/useAuth';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export default function Home() {
   const { isAuthenticated, isLoading } = useAuth();
-  const router = useRouter();
-
-  const handleGetStarted = () => {
-    if (isAuthenticated) {
-      router.push('/dashboard');
-    } else {
-      router.push('/auth/register');
-    }
-  };
+  
+  const getStartedHref = isAuthenticated ? '/dashboard' : '/auth/register';
 
   const benefits = [
     "Transform PDFs into searchable knowledge",
@@ -119,7 +111,8 @@ export default function Home() {
                     size="lg" 
                     rightSection={<IconArrowRight size={20} />}
                     radius="sm"
-                    onClick={handleGetStarted}
+                    component={Link}
+                    href={getStartedHref}
                     style={{
                       background: 'var(--forest-green-primary)',
                       border: '1px solid var(--forest-green-primary)'
@@ -163,7 +156,7 @@ export default function Home() {
                 margin: '0 auto'
               }}
             >
-              "Knowledge is not a commodity to be consumed, but a sanctuary to be cultivated."
+              &ldquo;Knowledge is not a commodity to be consumed, but a sanctuary to be cultivated.&rdquo;
             </Text>
           </Box>
 
@@ -506,7 +499,8 @@ export default function Home() {
               <Button 
                 size="xl"
                 rightSection={<IconArrowRight size={20} />}
-                onClick={handleGetStarted}
+                component={Link}
+                href={getStartedHref}
                 style={{
                   background: 'var(--forest-green-primary)',
                   border: 'none',

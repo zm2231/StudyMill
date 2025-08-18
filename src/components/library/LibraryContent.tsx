@@ -23,21 +23,12 @@ import {
   IconPlus
 } from '@tabler/icons-react';
 import { useMemories, type Memory } from '@/hooks/useMemories';
+import { LibraryContentProps } from '@/types/library';
+import { LibraryContentSkeleton, OverviewSkeleton } from './LibraryContentSkeleton';
+import { EmptyState } from './EmptyState';
 
-interface Course {
-  id: string;
-  name: string;
-  count: number;
-  color: string;
-}
-
-interface LibraryContentProps {
-  selectedCourse: string | null;
-  courses: Course[];
-}
-
-export function LibraryContent({ selectedCourse, courses }: LibraryContentProps) {
-  const { memories, loading, error, fetchMemories, getMemoriesByTag } = useMemories();
+export function LibraryContent({ selectedCourse, courses, isLoading: coursesLoading, error: coursesError }: LibraryContentProps) {
+  const { memories, loading: memoriesLoading, error: memoriesError, fetchMemories, getMemoriesByTag } = useMemories();
   
   const selectedCourseData = courses.find(c => c.id === selectedCourse);
   
@@ -54,7 +45,21 @@ export function LibraryContent({ selectedCourse, courses }: LibraryContentProps)
     return getMemoriesByTag(selectedCourse);
   };
   
-  const filteredMemories = getFilteredMemories();
+  const filteredMemories = getFilteredMemories() || [];
+
+  // Show skeleton while courses are loading
+  if (coursesLoading && !courses.length) {
+    return selectedCourse === 'overview' ? <OverviewSkeleton /> : <LibraryContentSkeleton />;
+  }
+
+  // Show error state if courses failed to load
+  if (coursesError && !courses.length) {
+    return (
+      <Alert icon={<IconAlertCircle size={16} />} color="red">
+        Failed to load courses. {coursesError}
+      </Alert>
+    );
+  }
   
   // Helper to format memory for display
   const formatMemoryAsDocument = (memory: Memory) => ({
@@ -172,7 +177,7 @@ export function LibraryContent({ selectedCourse, courses }: LibraryContentProps)
           </Title>
         </Group>
 
-        {loading && (
+        {memoriesLoading && (
           <Box ta="center" py="xl">
             <Loader size="md" />
             <Text size="sm" c="dimmed" mt="md">
@@ -181,27 +186,21 @@ export function LibraryContent({ selectedCourse, courses }: LibraryContentProps)
           </Box>
         )}
 
-        {error && (
+        {memoriesError && (
           <Alert icon={<IconAlertCircle size={16} />} color="red" mb="lg">
-            {error}
+            {memoriesError}
           </Alert>
         )}
 
-        {!loading && !error && documentItems.length === 0 && (
-          <Box ta="center" py="xl">
-            <Text size="lg" c="dimmed" mb="md">
-              No memories yet
-            </Text>
-            <Text size="sm" c="dimmed" mb="xl">
-              Upload documents or create memories to start building your knowledge library
-            </Text>
-            <Button leftSection={<IconFileText size={16} />} variant="light">
-              Upload Document
-            </Button>
-          </Box>
+        {!memoriesLoading && !memoriesError && documentItems.length === 0 && (
+          <EmptyState
+            type="memories"
+            onUploadDocument={() => {/* TODO: Open document upload modal */}}
+            onUploadAudio={() => {/* TODO: Open audio upload modal */}}
+          />
         )}
 
-        {!loading && !error && documentItems.length > 0 && (
+        {!memoriesLoading && !memoriesError && documentItems.length > 0 && (
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
             {documentItems.map((doc) => (
               <Card 

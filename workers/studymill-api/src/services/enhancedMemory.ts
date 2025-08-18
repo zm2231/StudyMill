@@ -74,9 +74,9 @@ export class EnhancedMemoryService {
   constructor(
     private dbService: DatabaseService,
     private vectorizeIndex: VectorizeIndex,
-    private geminiApiKey: string
+    private aiBinding: any
   ) {
-    this.vectorService = new VectorService(geminiApiKey, vectorizeIndex, dbService);
+    this.vectorService = new VectorService(aiBinding, vectorizeIndex, dbService);
     this.tagService = new TagService(dbService);
   }
 

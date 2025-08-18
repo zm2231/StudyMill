@@ -60,9 +60,9 @@ export class MemoryService {
   constructor(
     private dbService: DatabaseService,
     private vectorizeIndex: VectorizeIndex,
-    geminiApiKey: string
+    aiBinding: any
   ) {
-    this.vectorService = new VectorService(geminiApiKey, vectorizeIndex, dbService);
+    this.vectorService = new VectorService(aiBinding, vectorizeIndex, dbService);
   }
 
   /**

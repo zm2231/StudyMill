@@ -6,6 +6,7 @@ import { authRoutes } from './routes/auth';
 import { apiRoutes } from './routes/api';
 import { errorHandler } from './middleware/error';
 import { securityHeaders, secureCORS } from './middleware/security';
+import { ChatDurableObject } from './durable-objects/ChatDurableObject';
 
 type Bindings = {
   // Database bindings
@@ -15,6 +16,9 @@ type Bindings = {
   BUCKET: R2Bucket;
   KV: KVNamespace;
   VECTORIZE: VectorizeIndex;
+  
+  // Durable Objects
+  CHAT_DO: DurableObjectNamespace;
   
   // Environment variables
   JWT_SECRET: string;
@@ -93,3 +97,4 @@ app.notFound((c) => {
 });
 
 export default app;
+export { ChatDurableObject };

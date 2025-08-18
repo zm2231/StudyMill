@@ -27,32 +27,51 @@ import { Message } from '@/types/chat';
 import { ChatMessage } from './ChatMessage';
 import { TypingIndicator } from './TypingIndicator';
 import { useAuth } from '@/hooks/useAuth';
+import { useWebSocketChat } from '@/hooks/useWebSocketChat';
 
 interface ChatInterfaceProps {
   sessionId?: string;
   courseContext?: string;
   assignmentContext?: string;
+  courseId?: string;
 }
 
 export function ChatInterface({
   sessionId,
   courseContext,
-  assignmentContext
+  assignmentContext,
+  courseId
 }: ChatInterfaceProps) {
   const { user } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isTyping, setIsTyping] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  const {
+    isConnected,
+    isConnecting,
+    messages,
+    streamingMessage,
+    sendMessage,
+    sendTyping,
+    clearMessages
+  } = useWebSocketChat({
+    sessionId,
+    courseId,
+    onError: (error) => {
+      console.error('Chat error:', error);
+    }
+  });
+
+  const isLoading = isConnecting || !isConnected;
+  const isTyping = !!streamingMessage;
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
     }
-  }, [messages, isTyping]);
+  }, [messages, streamingMessage]);
 
   // Focus input on mount
   useEffect(() => {
@@ -64,48 +83,14 @@ export function ChatInterface({
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content: inputValue.trim(),
-      role: 'user',
-      timestamp: new Date(),
-      status: 'sent'
-    };
-
-    setMessages(prev => [...prev, userMessage]);
+    const content = inputValue.trim();
     setInputValue('');
-    setIsLoading(true);
-    setIsTyping(true);
 
-    try {
-      // TODO: Replace with actual API call to Gemini
-      // This is a placeholder for the AI response
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: `I understand you asked: "${userMessage.content}"\n\nThis is a placeholder response. The Gemini 2.5 Flash integration will be implemented in the next subtask.`,
-        role: 'assistant',
-        timestamp: new Date(),
-        status: 'delivered'
-      };
-
-      setMessages(prev => [...prev, aiMessage]);
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      
-      const errorMessage: Message = {
-        id: (Date.now() + 2).toString(),
-        content: 'Sorry, I encountered an error processing your message. Please try again.',
-        role: 'assistant',
-        timestamp: new Date(),
-        status: 'error'
-      };
-
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-      setIsTyping(false);
+    // Send message via WebSocket
+    const success = sendMessage(content);
+    
+    if (!success) {
+      console.error('Failed to send message - not connected');
     }
   };
 
@@ -117,7 +102,7 @@ export function ChatInterface({
   };
 
   const clearChat = () => {
-    setMessages([]);
+    clearMessages();
   };
 
   const hasContext = courseContext || assignmentContext;
@@ -156,6 +141,15 @@ export function ChatInterface({
                   Context Active
                 </Badge>
               )}
+              <Badge
+                variant="light"
+                style={{
+                  backgroundColor: isConnected ? 'var(--forest-green-light)' : 'var(--warm-brown-light)',
+                  color: isConnected ? 'var(--forest-green-primary)' : 'var(--warm-brown)',
+                }}
+              >
+                {isConnecting ? 'Connecting...' : isConnected ? 'Connected' : 'Disconnected'}
+              </Badge>
             </Group>
             
             <Button
@@ -228,12 +222,17 @@ export function ChatInterface({
                   </Stack>
                 </Stack>
               ) : (
-                messages.map((message) => (
-                  <ChatMessage key={message.id} message={message} />
-                ))
+                <>
+                  {messages.map((message) => (
+                    <ChatMessage key={message.id} message={message} />
+                  ))}
+                  {streamingMessage && (
+                    <ChatMessage key={streamingMessage.id} message={streamingMessage} />
+                  )}
+                </>
               )}
               
-              {isTyping && <TypingIndicator />}
+              {isTyping && !streamingMessage && <TypingIndicator />}
             </Stack>
           </ScrollArea>
         </Paper>

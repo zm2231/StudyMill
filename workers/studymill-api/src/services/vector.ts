@@ -31,27 +31,26 @@ export interface VectorSearchOptions {
 }
 
 export class VectorService {
-  private static readonly GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
   private static readonly MAX_BATCH_SIZE = 100;
   private static readonly MAX_RETRIES = 3;
   private static readonly RETRY_DELAY = 2000;
-  private static readonly EMBEDDING_DIMENSIONS = 768;
+  private static readonly EMBEDDING_DIMENSIONS = 768; // Cloudflare text embeddings
   
-  // Cost estimation: Gemini embedding-001 pricing
-  private static readonly COST_PER_1K_TOKENS = 0.0001; // $0.0001 per 1K tokens
+  // Cost estimation: Cloudflare Workers AI embeddings (included in plan)
+  private static readonly COST_PER_1K_TOKENS = 0.0; // Free with Workers AI
 
   constructor(
-    private apiKey: string,
+    private aiBinding: any, // Cloudflare Workers AI binding
     private vectorizeIndex: VectorizeIndex,
     private dbService: DatabaseService
   ) {
-    if (!apiKey) {
-      throw new Error('Gemini API key is required');
+    if (!aiBinding) {
+      throw new Error('Cloudflare AI binding is required');
     }
   }
 
   /**
-   * Generate embeddings for text chunks using Gemini embedding-001
+   * Generate embeddings for text chunks using Cloudflare Workers AI
    */
   async generateEmbeddings(texts: string[], batchId?: string): Promise<EmbeddingResponse> {
     if (texts.length === 0) {
@@ -63,7 +62,7 @@ export class VectorService {
     }
 
     try {
-      const embeddings = await this.callGeminiEmbeddingAPI(texts);
+      const embeddings = await this.callCloudflareEmbeddingAPI(texts);
       const tokenCount = this.estimateTokenCount(texts);
       const cost = this.calculateCost(tokenCount);
 
@@ -213,43 +212,30 @@ export class VectorService {
   /**
    * Private helper methods
    */
-  private async callGeminiEmbeddingAPI(texts: string[], retryCount = 0): Promise<number[][]> {
+  private async callCloudflareEmbeddingAPI(texts: string[], retryCount = 0): Promise<number[][]> {
     try {
-      const requests = texts.map(text => ({
-        model: 'models/embedding-001',
-        content: { parts: [{ text }] }
-      }));
+      // Process texts in batches for Cloudflare Workers AI
+      const embeddings: number[][] = [];
 
-      const response = await fetch(`${VectorService.GEMINI_API_BASE}/models/embedding-001:batchEmbed?key=${this.apiKey}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ requests })
-      });
+      for (const text of texts) {
+        const result = await this.aiBinding.run('@cf/baai/bge-base-en-v1.5', {
+          text: [text]
+        });
 
-      if (!response.ok) {
-        throw new Error(`Gemini API failed with status ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      
-      if (!data.embeddings || !Array.isArray(data.embeddings)) {
-        throw new Error('Invalid response format from Gemini API');
-      }
-
-      return data.embeddings.map((embedding: any) => {
-        if (!embedding.values || !Array.isArray(embedding.values)) {
-          throw new Error('Invalid embedding format from Gemini API');
+        if (!result || !result.data || !Array.isArray(result.data) || !result.data[0]) {
+          throw new Error('Invalid response format from Cloudflare Workers AI');
         }
-        return embedding.values;
-      });
+
+        embeddings.push(result.data[0]);
+      }
+
+      return embeddings;
 
     } catch (error) {
       if (retryCount < VectorService.MAX_RETRIES) {
-        console.warn(`Gemini API call failed, retrying (${retryCount + 1}/${VectorService.MAX_RETRIES}):`, error);
+        console.warn(`Cloudflare AI call failed, retrying (${retryCount + 1}/${VectorService.MAX_RETRIES}):`, error);
         await this.delay(VectorService.RETRY_DELAY * (retryCount + 1));
-        return this.callGeminiEmbeddingAPI(texts, retryCount + 1);
+        return this.callCloudflareEmbeddingAPI(texts, retryCount + 1);
       }
       throw error;
     }

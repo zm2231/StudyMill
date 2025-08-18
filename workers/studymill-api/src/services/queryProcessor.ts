@@ -88,7 +88,7 @@ export class QueryProcessorService {
 
     try {
       // Step 1: Analyze query intent and extract entities
-      const analysis = await this.analyzeQuery(query);
+      const analysis = await this.analyzeQuery(query, userId);
 
       // Step 2: Apply rewriting rules
       const rewrittenQuery = await this.applyRewriteRules(query, analysis.intent);
@@ -152,14 +152,14 @@ export class QueryProcessorService {
   /**
    * Analyze query to determine intent and extract entities
    */
-  private async analyzeQuery(query: string): Promise<QueryAnalysis> {
+  private async analyzeQuery(query: string, userId?: string): Promise<QueryAnalysis> {
     const startTime = Date.now();
     
     // Simple rule-based intent detection (could be enhanced with ML)
     const intent = this.detectIntent(query);
     
     // Extract entities using pattern matching and common academic terms
-    const entities = this.extractEntities(query);
+    const entities = await this.extractEntities(query, userId);
     
     // Generate basic rewritten queries
     const rewrittenQueries = this.generateBasicRewrites(query);
@@ -222,12 +222,28 @@ export class QueryProcessorService {
   /**
    * Extract entities using pattern matching
    */
-  private extractEntities(query: string): ExtractedEntity[] {
+  private async extractEntities(query: string, userId?: string): Promise<ExtractedEntity[]> {
     const entities: ExtractedEntity[] = [];
     
-    // Academic subject patterns
-    const subjects = ['mathematics', 'physics', 'chemistry', 'biology', 'history', 'literature', 
-                     'computer science', 'psychology', 'philosophy', 'economics', 'sociology'];
+    // Get dynamic subjects from user's actual courses
+    let subjects: string[] = [];
+    if (userId && this.dbService) {
+      try {
+        const userCourses = await this.dbService.query(
+          'SELECT name FROM courses WHERE user_id = ? AND deleted_at IS NULL',
+          [userId]
+        );
+        subjects = userCourses.map((course: any) => course.name.toLowerCase());
+      } catch (error) {
+        console.warn('Could not fetch user courses for entity extraction:', error);
+      }
+    }
+    
+    // Fallback to common academic terms if no user courses
+    if (subjects.length === 0) {
+      subjects = ['mathematics', 'physics', 'chemistry', 'biology', 'history', 'literature', 
+                 'computer science', 'psychology', 'philosophy', 'economics', 'sociology'];
+    }
     
     // Date patterns
     const datePattern = /\b(\d{4}|\d{1,2}\/\d{1,2}\/\d{2,4}|january|february|march|april|may|june|july|august|september|october|november|december)\b/gi;

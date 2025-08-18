@@ -26,8 +26,17 @@ publicDocumentsRoutes.get('/supported-types', async (c) => {
 });
 apiRoutes.route('/documents', publicDocumentsRoutes);
 
-// Apply authentication middleware to all other API routes
-apiRoutes.use('*', authMiddleware);
+// Apply authentication middleware to all other API routes (except WebSocket endpoints)
+apiRoutes.use('*', async (c, next) => {
+  const url = new URL(c.req.url);
+  
+  // Skip auth for WebSocket endpoints
+  if (url.pathname.includes('/chat/ws')) {
+    return next();
+  }
+  
+  return authMiddleware(c, next);
+});
 
 // Courses routes
 const coursesRoutes = new Hono();
@@ -37,27 +46,72 @@ coursesRoutes.get('/', async (c) => {
   const dbService = new DatabaseService(c.env.DB);
   const courseService = new CourseService(dbService);
   
-  const courses = await courseService.getUserCourses(userId);
+  // Get courses with real memory counts from database
+  const coursesWithCounts = await courseService.getUserCoursesWithMemoryCounts(userId);
+  
+  // Transform courses to match frontend expectations
+  const transformedCourses = coursesWithCounts.map(course => ({
+    ...course,
+    schedule: [], // Empty schedule array until scheduling is implemented
+    semester: {
+      startDate: '2025-08-15',
+      endDate: '2025-12-15',
+      name: 'Fall 2025'
+    }
+    // memoryCount is now included from getUserCoursesWithMemoryCounts
+  }));
   
   return c.json({
     success: true,
-    courses
+    courses: transformedCourses
   });
 });
 
 coursesRoutes.post('/', async (c) => {
   const userId = c.get('userId');
-  const { name, description } = await c.req.json();
+  const courseData = await c.req.json();
   
   const dbService = new DatabaseService(c.env.DB);
   const courseService = new CourseService(dbService);
   
-  const course = await courseService.createCourse(userId, { name, description });
+  // For now, extract basic fields and ignore complex schedule/semester data
+  // TODO: Implement full course creation with schedules
+  const basicCourseData = {
+    name: courseData.name,
+    description: courseData.description,
+    code: courseData.code,
+    color: courseData.color || '#3b82f6',
+    instructor: courseData.instructor,
+    credits: courseData.credits || 3
+  };
+  
+  const course = await courseService.createCourse(userId, basicCourseData);
   
   return c.json({
     success: true,
-    course
+    course: {
+      ...course,
+      schedule: courseData.schedule || [],
+      semester: courseData.semester || {
+        startDate: '2025-08-15',
+        endDate: '2025-12-15',
+        name: 'Fall 2025'
+      },
+      memoryCount: 0
+    }
   }, 201);
+});
+
+// Today's classes endpoint - must come before /:id route
+coursesRoutes.get('/today', async (c) => {
+  const userId = c.get('userId');
+  
+  // For now, return an empty array to prevent frontend crashes
+  // TODO: Implement actual today's classes logic with course schedules
+  return c.json({
+    success: true,
+    classes: []
+  });
 });
 
 coursesRoutes.get('/:id', async (c) => {
@@ -69,9 +123,21 @@ coursesRoutes.get('/:id', async (c) => {
   
   const course = await courseService.getCourse(courseId, userId);
   
+  // Get real memory count for this specific course
+  const memoryCount = await dbService.getMemoryCountByCourse(courseId, userId);
+  
   return c.json({
     success: true,
-    course
+    course: {
+      ...course,
+      schedule: [], // Empty schedule array until scheduling is implemented
+      semester: {
+        startDate: '2025-08-15',
+        endDate: '2025-12-15',
+        name: 'Fall 2025'
+      },
+      memoryCount // Real memory count from database
+    }
   });
 });
 
@@ -105,6 +171,7 @@ coursesRoutes.delete('/:id', async (c) => {
     message: 'Course deleted successfully'
   });
 });
+
 
 // Documents routes
 const documentsRoutes = new Hono();
@@ -267,7 +334,7 @@ documentsRoutes.post('/:id/process', async (c) => {
     c.env.BUCKET,
     c.env.VECTORIZE,
     c.env.PARSE_EXTRACT_API_KEY,
-    c.env.GEMINI_API_KEY
+    c.env.AI
   );
   
   const job = await processorService.queueDocumentProcessing(documentId, userId, processingMode);
@@ -296,7 +363,7 @@ documentsRoutes.get('/:id/content', async (c) => {
     c.env.BUCKET,
     c.env.VECTORIZE,
     c.env.PARSE_EXTRACT_API_KEY,
-    c.env.GEMINI_API_KEY
+    c.env.AI
   );
   
   const content = await processorService.getProcessedContent(documentId, userId);
@@ -325,7 +392,7 @@ documentsRoutes.get('/search', async (c) => {
     c.env.BUCKET,
     c.env.VECTORIZE,
     c.env.PARSE_EXTRACT_API_KEY,
-    c.env.GEMINI_API_KEY
+    c.env.AI
   );
   
   const results = await processorService.searchDocuments(userId, query, courseId, limit);
@@ -347,7 +414,7 @@ documentsRoutes.get('/stats', async (c) => {
     c.env.BUCKET,
     c.env.VECTORIZE,
     c.env.PARSE_EXTRACT_API_KEY,
-    c.env.GEMINI_API_KEY
+    c.env.AI
   );
   
   const stats = await processorService.getUserProcessingStats(userId);
@@ -371,7 +438,7 @@ documentsRoutes.get('/:id/vector-status', async (c) => {
     c.env.BUCKET,
     c.env.VECTORIZE,
     c.env.PARSE_EXTRACT_API_KEY,
-    c.env.GEMINI_API_KEY
+    c.env.AI
   );
   
   const status = await processorService.getVectorSearchStatus(documentId, userId);
@@ -395,7 +462,7 @@ documentsRoutes.post('/:id/reindex', async (c) => {
     c.env.BUCKET,
     c.env.VECTORIZE,
     c.env.PARSE_EXTRACT_API_KEY,
-    c.env.GEMINI_API_KEY
+    c.env.AI
   );
   
   const result = await processorService.reindexDocument(documentId, userId);
@@ -419,7 +486,7 @@ documentsRoutes.get('/analytics/costs', async (c) => {
     c.env.BUCKET,
     c.env.VECTORIZE,
     c.env.PARSE_EXTRACT_API_KEY,
-    c.env.GEMINI_API_KEY
+    c.env.AI
   );
   
   const costSummary = await processorService.getUserCostSummary(userId, days);
@@ -433,6 +500,25 @@ documentsRoutes.get('/analytics/costs', async (c) => {
 
 // Chat routes
 const chatRoutes = new Hono();
+
+// WebSocket chat endpoint
+chatRoutes.get('/ws', async (c) => {
+  const upgrade = c.req.header('Upgrade');
+  
+  if (upgrade !== 'websocket') {
+    return c.json({ error: 'Expected WebSocket upgrade' }, 426);
+  }
+
+  // Get session ID from query params
+  const sessionId = c.req.query('sessionId') || crypto.randomUUID();
+  
+  // Get Durable Object instance for this session
+  const durableObjectId = c.env.CHAT_DO.idFromName(sessionId);
+  const chatDO = c.env.CHAT_DO.get(durableObjectId);
+  
+  // Forward the WebSocket upgrade request to the Durable Object
+  return chatDO.fetch(c.req.raw);
+});
 
 chatRoutes.get('/sessions', async (c) => {
   // TODO: Get user chat sessions from D1
@@ -515,7 +601,7 @@ searchRoutes.post('/semantic', async (c) => {
     // Initialize services
     const dbService = new DatabaseService(c.env.DB);
     const vectorService = new VectorService(
-      c.env.GEMINI_API_KEY,
+      c.env.AI,
       c.env.VECTORIZE,
       dbService
     );
@@ -563,7 +649,7 @@ searchRoutes.get('/quick', async (c) => {
     // Initialize services for keyword-only quick search
     const dbService = new DatabaseService(c.env.DB);
     const vectorService = new VectorService(
-      c.env.GEMINI_API_KEY,
+      c.env.AI,
       c.env.VECTORIZE,
       dbService
     );
@@ -605,7 +691,7 @@ searchRoutes.get('/suggestions', async (c) => {
     // Initialize services
     const dbService = new DatabaseService(c.env.DB);
     const vectorService = new VectorService(
-      c.env.GEMINI_API_KEY,
+      c.env.AI,
       c.env.VECTORIZE,
       dbService
     );
@@ -636,7 +722,7 @@ searchRoutes.get('/analytics', async (c) => {
     // Initialize services
     const dbService = new DatabaseService(c.env.DB);
     const vectorService = new VectorService(
-      c.env.GEMINI_API_KEY,
+      c.env.AI,
       c.env.VECTORIZE,
       dbService
     );
@@ -785,7 +871,7 @@ audioRoutes.post('/upload', async (c) => {
 
     // Create proper memories in the memory system
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
     
     const memories = await AudioProcessor.createMemoriesWithMemoryService(
       memoryService,

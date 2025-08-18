@@ -44,11 +44,11 @@ export class DocumentProcessorService {
     private r2Bucket: R2Bucket,
     private vectorizeIndex: VectorizeIndex,
     parseExtractApiKey: string,
-    geminiApiKey: string
+    aiBinding: any
   ) {
     this.parseExtractService = new ParseExtractService(parseExtractApiKey);
     this.unifiedProcessor = new UnifiedDocumentProcessor(parseExtractApiKey, r2Bucket, dbService);
-    this.vectorService = new VectorService(geminiApiKey, vectorizeIndex, dbService);
+    this.vectorService = new VectorService(aiBinding, vectorizeIndex, dbService);
     this.embeddingIndexerService = new EmbeddingIndexerService(this.vectorService, dbService);
     
     // Feature flag: Use hybrid processing by default

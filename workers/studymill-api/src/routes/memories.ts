@@ -21,7 +21,7 @@ memoryRoutes.get('/', async (c) => {
   try {
     const userId = c.get('userId');
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
 
     // Get query parameters for filtering
     const sourceType = c.req.query('source_type');
@@ -55,7 +55,7 @@ memoryRoutes.get('/:id', async (c) => {
     const userId = c.get('userId');
     const memoryId = c.req.param('id');
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
 
     const memory = await memoryService.getMemory(memoryId, userId);
     
@@ -83,7 +83,7 @@ memoryRoutes.post('/', async (c) => {
     }
 
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
 
     const memory = await memoryService.createMemory(userId, {
       content,
@@ -108,7 +108,7 @@ memoryRoutes.put('/:id', async (c) => {
     const body = await c.req.json();
     
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
 
     const memory = await memoryService.updateMemory(memoryId, userId, body);
     
@@ -130,7 +130,7 @@ memoryRoutes.delete('/:id', async (c) => {
     const memoryId = c.req.param('id');
     
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
 
     const deleted = await memoryService.deleteMemory(memoryId, userId);
     
@@ -158,7 +158,7 @@ memoryRoutes.post('/search', async (c) => {
     }
 
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
 
     const results = await memoryService.searchMemories(userId, query, {
       ...filters,
@@ -185,7 +185,7 @@ memoryRoutes.post('/import/document', async (c) => {
     }
 
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
 
     const memories = await memoryService.importFromDocument(document_id, userId, container_tags);
 
@@ -204,7 +204,7 @@ memoryRoutes.get('/:id/relations', async (c) => {
     const limit = parseInt(c.req.query('limit') || '10');
     
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
 
     const relations = await memoryService.getMemoryRelations(memoryId, userId, limit);
 

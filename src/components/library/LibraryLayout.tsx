@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   AppShell, 
   NavLink, 
@@ -12,7 +12,10 @@ import {
   Box,
   Badge,
   Breadcrumbs,
-  Anchor
+  Anchor,
+  Menu,
+  Skeleton,
+  Alert
 } from '@mantine/core';
 import { 
   IconLogout, 
@@ -21,35 +24,51 @@ import {
   IconBrain,
   IconChartBar,
   IconSettings,
-  IconUpload
+  IconUpload,
+  IconMicrophone,
+  IconFileText,
+  IconSchool,
+  IconCalendarTime,
+  IconAlertCircle
 } from '@tabler/icons-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { LibraryContent } from './LibraryContent';
 import { DocumentUpload } from './DocumentUpload';
-
-interface Course {
-  id: string;
-  name: string;
-  count: number;
-  color: string;
-}
+import { AudioUpload } from './AudioUpload';
+import { TodaysClasses } from '../dashboard/TodaysClasses';
+import { CourseCreation } from '../courses/CourseCreation';
+import { CourseNavItem, CourseSelection } from '@/types/library';
+import { useCoursesWithSWR } from '@/hooks/useCoursesWithSWR';
+import { CourseListSkeleton } from './CourseListSkeleton';
+import { LibraryErrorBoundary, ApiErrorAlert } from './LibraryErrorBoundary';
+import { EmptyState } from './EmptyState';
 
 export function LibraryLayout() {
   const { user, logout } = useAuth();
   const router = useRouter();
-  const [selectedCourse, setSelectedCourse] = useState<string | null>('overview');
-  const [showUpload, setShowUpload] = useState(false);
+  const [selectedCourse, setSelectedCourse] = useState<CourseSelection>('overview');
+  const [showDocumentUpload, setShowDocumentUpload] = useState(false);
+  const [showAudioUpload, setShowAudioUpload] = useState(false);
+  const [showCourseCreation, setShowCourseCreation] = useState(false);
+  const [preselectedCourseId, setPreselectedCourseId] = useState<string | undefined>();
+  
+  // Use SWR hook for course data with caching and background updates
+  const { 
+    navItems: courses, 
+    isLoading, 
+    isValidating,
+    error, 
+    refreshCourses,
+    revalidate 
+  } = useCoursesWithSWR();
 
-  // Mock courses data - will be replaced with real data
-  const courses: Course[] = [
-    { id: 'computer-science', name: 'Computer science', count: 50, color: '#3b82f6' },
-    { id: 'economics', name: 'Economics', count: 17, color: '#8b5cf6' },
-    { id: 'machine-learning', name: 'Machine learning', count: 37, color: '#84cc16' },
-    { id: 'psychology', name: 'Psychology', count: 22, color: '#eab308' },
-    { id: 'biology', name: 'Biology', count: 14, color: '#10b981' },
-    { id: 'mathematics', name: 'Mathematics', count: 28, color: '#f97316' },
-  ];
+  // Refresh courses when course creation modal is closed successfully
+  const handleCourseCreationClose = () => {
+    setShowCourseCreation(false);
+    // Trigger revalidation to ensure fresh data
+    revalidate();
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -57,6 +76,16 @@ export function LibraryLayout() {
 
   const handleStartChat = () => {
     router.push('/chat');
+  };
+
+  const handleOpenAudioUpload = (courseId?: string) => {
+    setPreselectedCourseId(courseId);
+    setShowAudioUpload(true);
+  };
+
+  const handleOpenDocumentUpload = (courseId?: string) => {
+    setPreselectedCourseId(courseId);
+    setShowDocumentUpload(true);
   };
 
   const breadcrumbItems = [
@@ -67,7 +96,8 @@ export function LibraryLayout() {
   ].filter(Boolean);
 
   return (
-    <AppShell 
+    <LibraryErrorBoundary>
+      <AppShell 
       navbar={{ width: 280, breakpoint: 'sm' }}
       padding="md"
       style={{ 
@@ -83,14 +113,39 @@ export function LibraryLayout() {
               <Title order={2} size="h3" style={{ color: '#1e293b' }}>
                 My Library
               </Title>
-              <Button 
-                size="xs" 
-                variant="light" 
-                leftSection={<IconPlus size={14} />}
-                onClick={() => setShowUpload(true)}
-              >
-                Add
-              </Button>
+              <Menu shadow="md" width={200}>
+                <Menu.Target>
+                  <Button 
+                    size="xs" 
+                    variant="light" 
+                    leftSection={<IconPlus size={14} />}
+                  >
+                    Add
+                  </Button>
+                </Menu.Target>
+
+                <Menu.Dropdown>
+                  <Menu.Item 
+                    leftSection={<IconFileText size={16} />}
+                    onClick={() => handleOpenDocumentUpload()}
+                  >
+                    Upload Documents
+                  </Menu.Item>
+                  <Menu.Item 
+                    leftSection={<IconMicrophone size={16} />}
+                    onClick={() => handleOpenAudioUpload()}
+                  >
+                    Upload Audio
+                  </Menu.Item>
+                  <Menu.Divider />
+                  <Menu.Item 
+                    leftSection={<IconSchool size={16} />}
+                    onClick={() => setShowCourseCreation(true)}
+                  >
+                    Create Course
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
             </Group>
             
             <Text size="sm" c="dimmed" mb="md">
@@ -135,9 +190,46 @@ export function LibraryLayout() {
 
           {/* My Library Section */}
           <Box style={{ flex: 1 }}>
-            <Text size="sm" fw={600} c="dimmed" mb="sm" tt="uppercase" style={{ letterSpacing: 0.5 }}>
-              My Library
-            </Text>
+            <Group justify="space-between" align="center" mb="sm">
+              <Text size="sm" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }}>
+                My Library
+              </Text>
+              {/* Background revalidation indicator */}
+              {isValidating && !isLoading && (
+                <Box
+                  w={8}
+                  h={8}
+                  style={{
+                    backgroundColor: '#3b82f6',
+                    borderRadius: '50%',
+                    animation: 'pulse 2s infinite',
+                  }}
+                />
+              )}
+            </Group>
+            
+            {/* Error State */}
+            {error && (
+              <ApiErrorAlert
+                error={error}
+                onRetry={refreshCourses}
+                retryCount={0}
+                maxRetries={3}
+              />
+            )}
+            
+            {/* Loading State */}
+            {isLoading && !courses.length && (
+              <CourseListSkeleton count={5} />
+            )}
+            
+            {/* Empty State */}
+            {!isLoading && !error && courses.length === 0 && (
+              <EmptyState
+                type="courses"
+                onCreateCourse={() => setShowCourseCreation(true)}
+              />
+            )}
             
             <Stack gap={2}>
               {courses.map((course) => (
@@ -223,17 +315,54 @@ export function LibraryLayout() {
         </Breadcrumbs>
 
         {/* Main Content */}
-        <LibraryContent 
-          selectedCourse={selectedCourse} 
-          courses={courses}
-        />
+        {selectedCourse === 'overview' ? (
+          <Stack gap="lg">
+            <TodaysClasses 
+              onOpenAudioUpload={handleOpenAudioUpload}
+              onOpenDocumentUpload={handleOpenDocumentUpload}
+            />
+            <LibraryContent 
+              selectedCourse={selectedCourse} 
+              courses={courses}
+              isLoading={isLoading}
+              error={error}
+            />
+          </Stack>
+        ) : (
+          <LibraryContent 
+            selectedCourse={selectedCourse} 
+            courses={courses}
+            isLoading={isLoading}
+            error={error}
+          />
+        )}
       </AppShell.Main>
 
-      {/* Upload Modal */}
+      {/* Upload Modals */}
       <DocumentUpload 
-        opened={showUpload}
-        onClose={() => setShowUpload(false)}
+        opened={showDocumentUpload}
+        onClose={() => {
+          setShowDocumentUpload(false);
+          setPreselectedCourseId(undefined);
+        }}
+        preselectedCourseId={preselectedCourseId}
+      />
+      
+      <AudioUpload 
+        opened={showAudioUpload}
+        onClose={() => {
+          setShowAudioUpload(false);
+          setPreselectedCourseId(undefined);
+        }}
+        preselectedCourseId={preselectedCourseId}
+      />
+
+      {/* Course Creation Modal */}
+      <CourseCreation
+        opened={showCourseCreation}
+        onClose={handleCourseCreationClose}
       />
     </AppShell>
+    </LibraryErrorBoundary>
   );
 }

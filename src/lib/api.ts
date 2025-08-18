@@ -117,10 +117,15 @@ class ApiClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     
-    const defaultHeaders = {
-      'Content-Type': 'application/json',
+    // Don't set Content-Type for FormData - let browser set it
+    const defaultHeaders: Record<string, string> = {
       ...this.getAuthHeader(),
     };
+    
+    // Only add Content-Type if it's not FormData
+    if (!(options.body instanceof FormData)) {
+      defaultHeaders['Content-Type'] = 'application/json';
+    }
 
     const config: RequestInit = {
       ...options,
@@ -263,16 +268,361 @@ class ApiClient {
     return this.accessToken;
   }
 
-  // Course endpoints (placeholder for future implementation)
-  async getCourses(): Promise<unknown[]> {
-    const response = await this.request<{ courses: unknown[] }>('/api/v1/courses');
-    return response.courses;
+  // Course management endpoints
+  async getCourses(): Promise<{
+    success: boolean;
+    courses: Array<{
+      id: string;
+      name: string;
+      code?: string;
+      color: string;
+      description?: string;
+      instructor?: string;
+      credits?: number;
+      schedule: Array<{
+        dayOfWeek: number;
+        startTime: string;
+        endTime: string;
+        location?: string;
+        timezone: string;
+      }>;
+      semester: {
+        startDate: string;
+        endDate: string;
+        name: string;
+      };
+      memoryCount: number;
+      created_at: string;
+      updated_at: string;
+    }>;
+  }> {
+    return this.request('/api/v1/courses');
   }
 
-  async createCourse(data: { name: string; description?: string }): Promise<unknown> {
+  async createCourse(data: {
+    name: string;
+    code?: string;
+    color: string;
+    description?: string;
+    instructor?: string;
+    credits?: number;
+    schedule: Array<{
+      dayOfWeek: number;
+      startTime: string;
+      endTime: string;
+      location?: string;
+      timezone: string;
+    }>;
+    semester: {
+      startDate: string;
+      endDate: string;
+      name: string;
+    };
+  }): Promise<{
+    success: boolean;
+    course: {
+      id: string;
+      name: string;
+      code?: string;
+      color: string;
+      description?: string;
+      instructor?: string;
+      credits?: number;
+      schedule: Array<{
+        dayOfWeek: number;
+        startTime: string;
+        endTime: string;
+        location?: string;
+        timezone: string;
+      }>;
+      semester: {
+        startDate: string;
+        endDate: string;
+        name: string;
+      };
+      memoryCount: number;
+      created_at: string;
+      updated_at: string;
+    };
+  }> {
     return this.request('/api/v1/courses', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  async updateCourse(id: string, data: Partial<{
+    name: string;
+    code?: string;
+    color: string;
+    description?: string;
+    instructor?: string;
+    credits?: number;
+    schedule: Array<{
+      dayOfWeek: number;
+      startTime: string;
+      endTime: string;
+      location?: string;
+      timezone: string;
+    }>;
+    semester: {
+      startDate: string;
+      endDate: string;
+      name: string;
+    };
+  }>): Promise<{
+    success: boolean;
+    course: any; // Same structure as createCourse response
+  }> {
+    return this.request(`/api/v1/courses/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteCourse(id: string): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    return this.request(`/api/v1/courses/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getCourse(id: string): Promise<{
+    success: boolean;
+    course: any; // Same structure as createCourse response
+  }> {
+    return this.request(`/api/v1/courses/${id}`);
+  }
+
+  // Today's classes and schedule utilities
+  async getTodaysClasses(): Promise<{
+    success: boolean;
+    classes: Array<{
+      course: any; // Course object
+      session: {
+        id: string;
+        courseId: string;
+        date: string;
+        title?: string;
+        week: number;
+        hasAudio: boolean;
+        hasNotes: boolean;
+        materials: {
+          audioFileId?: string;
+          documentIds: string[];
+          memoryIds: string[];
+        };
+        created_at: string;
+        updated_at: string;
+      };
+      timeSlot: {
+        dayOfWeek: number;
+        startTime: string;
+        endTime: string;
+        location?: string;
+        timezone: string;
+      };
+      status: 'upcoming' | 'current' | 'completed';
+      canUpload: boolean;
+    }>;
+  }> {
+    return this.request('/api/v1/courses/today');
+  }
+
+  // Lecture session management
+  async getLectureSessions(courseId: string, options?: {
+    limit?: number;
+    offset?: number;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{
+    success: boolean;
+    sessions: Array<{
+      id: string;
+      courseId: string;
+      date: string;
+      title?: string;
+      week: number;
+      hasAudio: boolean;
+      hasNotes: boolean;
+      materials: {
+        audioFileId?: string;
+        documentIds: string[];
+        memoryIds: string[];
+      };
+      created_at: string;
+      updated_at: string;
+    }>;
+    pagination: {
+      total: number;
+      limit: number;
+      offset: number;
+      has_more: boolean;
+    };
+  }> {
+    const searchParams = new URLSearchParams();
+    if (options?.limit) searchParams.set('limit', options.limit.toString());
+    if (options?.offset) searchParams.set('offset', options.offset.toString());
+    if (options?.startDate) searchParams.set('startDate', options.startDate);
+    if (options?.endDate) searchParams.set('endDate', options.endDate);
+    
+    const query = searchParams.toString();
+    return this.request(`/api/v1/courses/${courseId}/sessions${query ? `?${query}` : ''}`);
+  }
+
+  async createLectureSession(courseId: string, data: {
+    date: string;
+    title?: string;
+  }): Promise<{
+    success: boolean;
+    session: any; // LectureSession object
+  }> {
+    return this.request(`/api/v1/courses/${courseId}/sessions`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLectureSession(courseId: string, sessionId: string, data: {
+    title?: string;
+    audioFileId?: string;
+    documentIds?: string[];
+  }): Promise<{
+    success: boolean;
+    session: any; // LectureSession object
+  }> {
+    return this.request(`/api/v1/courses/${courseId}/sessions/${sessionId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Audio upload endpoints
+  async uploadAudio(formData: FormData): Promise<{
+    success: boolean;
+    audioFileId: string;
+    transcription: {
+      id: string;
+      text: string;
+      language: string;
+      duration: number;
+      processingTime: number;
+      backend: string;
+      segmentCount: number;
+      topicCount: number;
+    };
+    memories: {
+      count: number;
+      topics: Array<{
+        id: string;
+        topic: string;
+        startTime: number;
+        endTime: number;
+        summary: string;
+        keyPoints: string[];
+      }>;
+      fullTranscription: string;
+    };
+  }> {
+    return this.request('/api/audio/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async getSupportedAudioFormats(): Promise<{
+    success: boolean;
+    supportedFormats: Array<{
+      extension: string;
+      mimeType: string;
+      description: string;
+    }>;
+    maxFileSize: number;
+    maxFileSizeMB: number;
+    recommendedFormats: string[];
+    backends: Array<{
+      name: string;
+      description: string;
+      models: string[];
+      speedFactor: string;
+      cost: string;
+    }>;
+  }> {
+    return this.request('/api/audio/supported-formats');
+  }
+
+  // Memory management endpoints
+  async getMemories(options?: {
+    limit?: number;
+    offset?: number;
+    source_type?: string;
+    container_tags?: string[];
+  }): Promise<{
+    success: boolean;
+    memories: Array<{
+      id: string;
+      content: string;
+      source_type: string;
+      source_id: string;
+      container_tags: string[];
+      metadata: Record<string, unknown>;
+      created_at: string;
+      updated_at: string;
+    }>;
+    pagination: {
+      total: number;
+      limit: number;
+      offset: number;
+      has_more: boolean;
+    };
+  }> {
+    const searchParams = new URLSearchParams();
+    if (options?.limit) searchParams.set('limit', options.limit.toString());
+    if (options?.offset) searchParams.set('offset', options.offset.toString());
+    if (options?.source_type) searchParams.set('source_type', options.source_type);
+    if (options?.container_tags) {
+      options.container_tags.forEach(tag => searchParams.append('container_tags', tag));
+    }
+    
+    const query = searchParams.toString();
+    return this.request(`/api/v1/memories${query ? `?${query}` : ''}`);
+  }
+
+  async searchMemories(query: string, options?: {
+    limit?: number;
+    hybrid_weight?: number;
+    container_tags?: string[];
+    source_types?: string[];
+  }): Promise<{
+    success: boolean;
+    results: Array<{
+      memory: {
+        id: string;
+        content: string;
+        source_type: string;
+        metadata: Record<string, unknown>;
+        container_tags: string[];
+        created_at: string;
+      };
+      score: number;
+      similarity: number;
+      keyword_score?: number;
+    }>;
+    query_info: {
+      original_query: string;
+      processed_query: string;
+      search_type: string;
+      total_results: number;
+    };
+  }> {
+    return this.request('/api/v1/memories/search', {
+      method: 'POST',
+      body: JSON.stringify({
+        query,
+        ...options,
+      }),
     });
   }
 

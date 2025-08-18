@@ -29,7 +29,11 @@ export class CourseService {
     // Create the course
     const course = await this.dbService.createCourse(userId, {
       name: data.name.trim(),
-      description: data.description?.trim()
+      description: data.description?.trim(),
+      code: data.code,
+      color: data.color || '#3b82f6',
+      instructor: data.instructor,
+      credits: data.credits || 3
     });
 
     return course;
@@ -37,6 +41,24 @@ export class CourseService {
 
   async getUserCourses(userId: string): Promise<Course[]> {
     return await this.dbService.getCoursesByUserId(userId);
+  }
+
+  async getUserCoursesWithMemoryCounts(userId: string): Promise<(Course & { memoryCount: number })[]> {
+    const courses = await this.dbService.getCoursesByUserId(userId);
+    
+    if (courses.length === 0) {
+      return [];
+    }
+
+    // Get memory counts for all courses in a single optimized query
+    const courseIds = courses.map(course => course.id);
+    const memoryCounts = await this.dbService.getMemoryCountsByCourses(courseIds, userId);
+
+    // Combine courses with their memory counts
+    return courses.map(course => ({
+      ...course,
+      memoryCount: memoryCounts[course.id] || 0
+    }));
   }
 
   async getCourse(courseId: string, userId: string): Promise<Course> {
@@ -72,6 +94,18 @@ export class CourseService {
     }
     if (data.description !== undefined) {
       updateData.description = data.description?.trim();
+    }
+    if (data.code !== undefined) {
+      updateData.code = data.code;
+    }
+    if (data.color !== undefined) {
+      updateData.color = data.color;
+    }
+    if (data.instructor !== undefined) {
+      updateData.instructor = data.instructor;
+    }
+    if (data.credits !== undefined) {
+      updateData.credits = data.credits;
     }
 
     const course = await this.dbService.updateCourse(courseId, userId, updateData);

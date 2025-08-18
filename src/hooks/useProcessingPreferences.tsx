@@ -32,12 +32,26 @@ export function useProcessingPreferences() {
         setPreferences({ ...DEFAULT_PREFERENCES, ...JSON.parse(stored) });
       }
 
-      // TODO: Load from API when backend preferences endpoint is available
-      // const response = await fetch('/api/user/processing-preferences');
-      // if (response.ok) {
-      //   const data = await response.json();
-      //   setPreferences(data.preferences);
-      // }
+      // Try to load from API
+      try {
+        const response = await fetch('/api/user/processing-preferences', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.preferences) {
+            setPreferences(data.preferences);
+            // Sync with localStorage
+            localStorage.setItem('processingPreferences', JSON.stringify(data.preferences));
+          }
+        }
+      } catch (apiError) {
+        console.warn('Preferences API not available yet, using localStorage');
+      }
     } catch (err) {
       setError('Failed to load preferences');
       console.error('Error loading preferences:', err);
@@ -48,22 +62,35 @@ export function useProcessingPreferences() {
 
   const loadCostSummary = async () => {
     try {
-      // TODO: Implement API call when cost analytics endpoint is available
-      // const response = await fetch('/api/documents/analytics/costs');
-      // if (response.ok) {
-      //   const data = await response.json();
-      //   setCostSummary(data.costSummary);
-      // }
+      // Try to get real cost data from API
+      try {
+        const response = await fetch('/api/user/processing-cost-summary', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.costSummary) {
+            setCostSummary(data.costSummary);
+            return;
+          }
+        }
+      } catch (apiError) {
+        console.warn('Cost summary API not available yet, using defaults');
+      }
       
-      // Mock data for now
+      // Fallback: Set cost summary to zero for new users (no mock data)
       setCostSummary({
-        totalCost: 2.45,
-        basicProcessingCount: 23,
-        premiumProcessingCount: 4,
-        averageCostPerDocument: 0.091,
+        totalCost: 0,
+        basicProcessingCount: 0,
+        premiumProcessingCount: 0,
+        averageCostPerDocument: 0,
         costByMode: {
-          basic: { count: 23, totalCost: 0 },
-          premium: { count: 4, totalCost: 2.45 }
+          basic: { count: 0, totalCost: 0 },
+          premium: { count: 0, totalCost: 0 }
         }
       });
     } catch (err) {
@@ -75,19 +102,26 @@ export function useProcessingPreferences() {
     try {
       setLoading(true);
       
-      // Save to localStorage
+      // Save to localStorage for immediate UI update
       localStorage.setItem('processingPreferences', JSON.stringify(newPreferences));
       
-      // TODO: Save to API when backend endpoint is available
-      // const response = await fetch('/api/user/processing-preferences', {
-      //   method: 'PUT',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(newPreferences)
-      // });
-      // 
-      // if (!response.ok) {
-      //   throw new Error('Failed to save preferences');
-      // }
+      // Try to save to API
+      try {
+        const response = await fetch('/api/user/processing-preferences', {
+          method: 'PUT',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify(newPreferences)
+        });
+        
+        if (!response.ok && response.status !== 404) {
+          console.warn('Failed to save preferences to server, using localStorage only');
+        }
+      } catch (apiError) {
+        console.warn('Preferences API not available yet, using localStorage only');
+      }
 
       setPreferences(newPreferences);
       setError(null);

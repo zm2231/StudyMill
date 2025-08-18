@@ -1,1 +1,328 @@
-'use client';\n\nimport { useState, useEffect } from 'react';\nimport { useApi } from '@/lib/api';\n\nexport interface Memory {\n  id: string;\n  userId: string;\n  content: string;\n  sourceType: 'manual' | 'document' | 'web' | 'conversation' | 'audio';\n  sourceId?: string;\n  containerTags: string[];\n  metadata: Record<string, any>;\n  createdAt: string;\n  updatedAt: string;\n}\n\nexport interface MemorySearchResult {\n  id: string;\n  score: number;\n  content: string;\n  sourceType: string;\n  containerTags: string[];\n  metadata: Record<string, any>;\n}\n\nexport interface MemorySearchFilters {\n  source_type?: string;\n  container_tags?: string[];\n}\n\nexport interface CreateMemoryData {\n  content: string;\n  source_type: 'manual' | 'document' | 'web' | 'conversation' | 'audio';\n  source_id?: string;\n  container_tags?: string[];\n  metadata?: Record<string, any>;\n}\n\nexport function useMemories() {\n  const [memories, setMemories] = useState<Memory[]>([]);\n  const [loading, setLoading] = useState(false);\n  const [error, setError] = useState<string | null>(null);\n  const api = useApi();\n\n  // Fetch all memories\n  const fetchMemories = async (filters?: {\n    source_type?: string;\n    container_tags?: string;\n    limit?: number;\n    offset?: number;\n  }) => {\n    setLoading(true);\n    setError(null);\n    \n    try {\n      const params = new URLSearchParams();\n      if (filters?.source_type) params.append('source_type', filters.source_type);\n      if (filters?.container_tags) params.append('container_tags', filters.container_tags);\n      if (filters?.limit) params.append('limit', filters.limit.toString());\n      if (filters?.offset) params.append('offset', filters.offset.toString());\n      \n      const queryString = params.toString();\n      const url = `/api/v1/memories${queryString ? `?${queryString}` : ''}`;\n      \n      const response = await api.request<{ memories: Memory[]; total: number }>(url);\n      setMemories(response.memories);\n      return response;\n    } catch (err) {\n      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch memories';\n      setError(errorMessage);\n      throw err;\n    } finally {\n      setLoading(false);\n    }\n  };\n\n  // Get a specific memory\n  const getMemory = async (id: string): Promise<Memory> => {\n    setLoading(true);\n    setError(null);\n    \n    try {\n      const response = await api.request<{ memory: Memory }>(`/api/v1/memories/${id}`);\n      return response.memory;\n    } catch (err) {\n      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch memory';\n      setError(errorMessage);\n      throw err;\n    } finally {\n      setLoading(false);\n    }\n  };\n\n  // Create a new memory\n  const createMemory = async (data: CreateMemoryData): Promise<Memory> => {\n    setLoading(true);\n    setError(null);\n    \n    try {\n      const response = await api.request<{ memory: Memory }>('/api/v1/memories', {\n        method: 'POST',\n        body: JSON.stringify(data),\n      });\n      \n      // Add the new memory to the local state\n      setMemories(prev => [response.memory, ...prev]);\n      \n      return response.memory;\n    } catch (err) {\n      const errorMessage = err instanceof Error ? err.message : 'Failed to create memory';\n      setError(errorMessage);\n      throw err;\n    } finally {\n      setLoading(false);\n    }\n  };\n\n  // Update a memory\n  const updateMemory = async (id: string, data: Partial<CreateMemoryData>): Promise<Memory> => {\n    setLoading(true);\n    setError(null);\n    \n    try {\n      const response = await api.request<{ memory: Memory }>(`/api/v1/memories/${id}`, {\n        method: 'PUT',\n        body: JSON.stringify(data),\n      });\n      \n      // Update the memory in local state\n      setMemories(prev => prev.map(m => m.id === id ? response.memory : m));\n      \n      return response.memory;\n    } catch (err) {\n      const errorMessage = err instanceof Error ? err.message : 'Failed to update memory';\n      setError(errorMessage);\n      throw err;\n    } finally {\n      setLoading(false);\n    }\n  };\n\n  // Delete a memory\n  const deleteMemory = async (id: string): Promise<void> => {\n    setLoading(true);\n    setError(null);\n    \n    try {\n      await api.request<{ success: boolean }>(`/api/v1/memories/${id}`, {\n        method: 'DELETE',\n      });\n      \n      // Remove the memory from local state\n      setMemories(prev => prev.filter(m => m.id !== id));\n    } catch (err) {\n      const errorMessage = err instanceof Error ? err.message : 'Failed to delete memory';\n      setError(errorMessage);\n      throw err;\n    } finally {\n      setLoading(false);\n    }\n  };\n\n  // Search memories\n  const searchMemories = async (\n    query: string,\n    filters?: MemorySearchFilters,\n    limit?: number\n  ): Promise<MemorySearchResult[]> => {\n    setLoading(true);\n    setError(null);\n    \n    try {\n      const response = await api.request<{ results: MemorySearchResult[] }>('/api/v1/memories/search', {\n        method: 'POST',\n        body: JSON.stringify({\n          query,\n          filters: filters || {},\n          limit: limit || 10,\n        }),\n      });\n      \n      return response.results;\n    } catch (err) {\n      const errorMessage = err instanceof Error ? err.message : 'Failed to search memories';\n      setError(errorMessage);\n      throw err;\n    } finally {\n      setLoading(false);\n    }\n  };\n\n  // Import memories from a document\n  const importFromDocument = async (\n    documentId: string,\n    containerTags?: string[]\n  ): Promise<Memory[]> => {\n    setLoading(true);\n    setError(null);\n    \n    try {\n      const response = await api.request<{ memories: Memory[]; imported: number }>('/api/v1/memories/import/document', {\n        method: 'POST',\n        body: JSON.stringify({\n          document_id: documentId,\n          container_tags: containerTags || [],\n        }),\n      });\n      \n      // Add imported memories to local state\n      setMemories(prev => [...response.memories, ...prev]);\n      \n      return response.memories;\n    } catch (err) {\n      const errorMessage = err instanceof Error ? err.message : 'Failed to import memories';\n      setError(errorMessage);\n      throw err;\n    } finally {\n      setLoading(false);\n    }\n  };\n\n  // Get memory relations\n  const getMemoryRelations = async (id: string, limit?: number) => {\n    setLoading(true);\n    setError(null);\n    \n    try {\n      const params = limit ? `?limit=${limit}` : '';\n      const response = await api.request<{ relations: any[] }>(`/api/v1/memories/${id}/relations${params}`);\n      return response.relations;\n    } catch (err) {\n      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch memory relations';\n      setError(errorMessage);\n      throw err;\n    } finally {\n      setLoading(false);\n    }\n  };\n\n  // Get unique container tags (courses)\n  const getContainerTags = (): string[] => {\n    const allTags = memories.flatMap(memory => memory.containerTags);\n    return Array.from(new Set(allTags)).sort();\n  };\n\n  // Get memories by container tag (course)\n  const getMemoriesByTag = (tag: string): Memory[] => {\n    return memories.filter(memory => memory.containerTags.includes(tag));\n  };\n\n  // Get memory statistics\n  const getStats = () => {\n    const totalMemories = memories.length;\n    const bySourceType = memories.reduce((acc, memory) => {\n      acc[memory.sourceType] = (acc[memory.sourceType] || 0) + 1;\n      return acc;\n    }, {} as Record<string, number>);\n    \n    const byContainerTag = memories.reduce((acc, memory) => {\n      memory.containerTags.forEach(tag => {\n        acc[tag] = (acc[tag] || 0) + 1;\n      });\n      return acc;\n    }, {} as Record<string, number>);\n    \n    return {\n      total: totalMemories,\n      bySourceType,\n      byContainerTag,\n    };\n  };\n\n  return {\n    memories,\n    loading,\n    error,\n    fetchMemories,\n    getMemory,\n    createMemory,\n    updateMemory,\n    deleteMemory,\n    searchMemories,\n    importFromDocument,\n    getMemoryRelations,\n    getContainerTags,\n    getMemoriesByTag,\n    getStats,\n  };\n}\n\n// Hook for managing a single memory\nexport function useMemory(id?: string) {\n  const [memory, setMemory] = useState<Memory | null>(null);\n  const [loading, setLoading] = useState(false);\n  const [error, setError] = useState<string | null>(null);\n  const api = useApi();\n\n  useEffect(() => {\n    if (id) {\n      fetchMemory(id);\n    }\n  }, [id]);\n\n  const fetchMemory = async (memoryId: string) => {\n    setLoading(true);\n    setError(null);\n    \n    try {\n      const response = await api.request<{ memory: Memory }>(`/api/v1/memories/${memoryId}`);\n      setMemory(response.memory);\n    } catch (err) {\n      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch memory';\n      setError(errorMessage);\n    } finally {\n      setLoading(false);\n    }\n  };\n\n  return {\n    memory,\n    loading,\n    error,\n    refetch: () => id && fetchMemory(id),\n  };\n}"
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useApi } from '@/lib/api';
+
+export interface Memory {
+  id: string;
+  userId: string;
+  content: string;
+  sourceType: 'manual' | 'document' | 'web' | 'conversation' | 'audio';
+  sourceId?: string;
+  containerTags: string[];
+  metadata: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MemorySearchResult {
+  id: string;
+  score: number;
+  content: string;
+  sourceType: string;
+  containerTags: string[];
+  metadata: Record<string, any>;
+}
+
+export interface MemorySearchFilters {
+  source_type?: string;
+  container_tags?: string[];
+}
+
+export interface CreateMemoryData {
+  content: string;
+  source_type: 'manual' | 'document' | 'web' | 'conversation' | 'audio';
+  source_id?: string;
+  container_tags?: string[];
+  metadata?: Record<string, any>;
+}
+
+export function useMemories() {
+  const [memories, setMemories] = useState<Memory[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const api = useApi();
+
+  // Fetch all memories
+  const fetchMemories = async (filters?: {
+    source_type?: string;
+    container_tags?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const params = new URLSearchParams();
+      if (filters?.source_type) params.append('source_type', filters.source_type);
+      if (filters?.container_tags) params.append('container_tags', filters.container_tags);
+      if (filters?.limit) params.append('limit', filters.limit.toString());
+      if (filters?.offset) params.append('offset', filters.offset.toString());
+      
+      const queryString = params.toString();
+      const url = `/api/v1/memories${queryString ? `?${queryString}` : ''}`;
+      
+      const response = await api.request<{ memories: Memory[]; total: number }>(url);
+      setMemories(response.memories || []);
+      return response;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch memories';
+      setError(errorMessage);
+      // Don't throw error - set empty array to prevent crashes
+      setMemories([]);
+      return { memories: [], total: 0 };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Get a specific memory
+  const getMemory = async (id: string): Promise<Memory> => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await api.request<{ memory: Memory }>(`/api/v1/memories/${id}`);
+      return response.memory;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch memory';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create a new memory
+  const createMemory = async (data: CreateMemoryData): Promise<Memory> => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await api.request<{ memory: Memory }>('/api/v1/memories', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      
+      // Add the new memory to the local state
+      setMemories(prev => [response.memory, ...prev]);
+      
+      return response.memory;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create memory';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Update a memory
+  const updateMemory = async (id: string, data: Partial<CreateMemoryData>): Promise<Memory> => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await api.request<{ memory: Memory }>(`/api/v1/memories/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+      
+      // Update the memory in local state
+      setMemories(prev => prev.map(m => m.id === id ? response.memory : m));
+      
+      return response.memory;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update memory';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete a memory
+  const deleteMemory = async (id: string): Promise<void> => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      await api.request<{ success: boolean }>(`/api/v1/memories/${id}`, {
+        method: 'DELETE',
+      });
+      
+      // Remove the memory from local state
+      setMemories(prev => prev.filter(m => m.id !== id));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete memory';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Search memories
+  const searchMemories = async (
+    query: string,
+    filters?: MemorySearchFilters,
+    limit?: number
+  ): Promise<MemorySearchResult[]> => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await api.request<{ results: MemorySearchResult[] }>('/api/v1/memories/search', {
+        method: 'POST',
+        body: JSON.stringify({
+          query,
+          filters: filters || {},
+          limit: limit || 10,
+        }),
+      });
+      
+      return response.results;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to search memories';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Import memories from a document
+  const importFromDocument = async (
+    documentId: string,
+    containerTags?: string[]
+  ): Promise<Memory[]> => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await api.request<{ memories: Memory[]; imported: number }>('/api/v1/memories/import/document', {
+        method: 'POST',
+        body: JSON.stringify({
+          document_id: documentId,
+          container_tags: containerTags || [],
+        }),
+      });
+      
+      // Add imported memories to local state
+      setMemories(prev => [...response.memories, ...prev]);
+      
+      return response.memories;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to import memories';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Get memory relations
+  const getMemoryRelations = async (id: string, limit?: number) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const params = limit ? `?limit=${limit}` : '';
+      const response = await api.request<{ relations: any[] }>(`/api/v1/memories/${id}/relations${params}`);
+      return response.relations;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch memory relations';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Get unique container tags (courses)
+  const getContainerTags = (): string[] => {
+    const allTags = memories.flatMap(memory => memory.containerTags);
+    return Array.from(new Set(allTags)).sort();
+  };
+
+  // Get memories by container tag (course)
+  const getMemoriesByTag = (tag: string): Memory[] => {
+    return memories.filter(memory => memory.containerTags.includes(tag));
+  };
+
+  // Get memory statistics
+  const getStats = () => {
+    const totalMemories = memories.length;
+    const bySourceType = memories.reduce((acc, memory) => {
+      acc[memory.sourceType] = (acc[memory.sourceType] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    const byContainerTag = memories.reduce((acc, memory) => {
+      memory.containerTags.forEach(tag => {
+        acc[tag] = (acc[tag] || 0) + 1;
+      });
+      return acc;
+    }, {} as Record<string, number>);
+    
+    return {
+      total: totalMemories,
+      bySourceType,
+      byContainerTag,
+    };
+  };
+
+  return {
+    memories,
+    loading,
+    error,
+    fetchMemories,
+    getMemory,
+    createMemory,
+    updateMemory,
+    deleteMemory,
+    searchMemories,
+    importFromDocument,
+    getMemoryRelations,
+    getContainerTags,
+    getMemoriesByTag,
+    getStats,
+  };
+}
+
+// Hook for managing a single memory
+export function useMemory(id?: string) {
+  const [memory, setMemory] = useState<Memory | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const api = useApi();
+
+  useEffect(() => {
+    if (id) {
+      fetchMemory(id);
+    }
+  }, [id]);
+
+  const fetchMemory = async (memoryId: string) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await api.request<{ memory: Memory }>(`/api/v1/memories/${memoryId}`);
+      setMemory(response.memory);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch memory';
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return {
+    memory,
+    loading,
+    error,
+    refetch: () => id && fetchMemory(id),
+  };
+}

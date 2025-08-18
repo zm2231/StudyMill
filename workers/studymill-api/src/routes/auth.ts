@@ -23,18 +23,18 @@ authRoutes.post('/register', async (c) => {
       });
     }
 
+    // Generate tokens
+    const jwtSecret = c.env?.JWT_SECRET;
+    if (!jwtSecret) {
+      createError('Authentication service unavailable', 500);
+    }
+
     // Initialize services
     const userService = new UserService(c.env?.DB);
     const sessionService = new SessionService(c.env?.KV);
 
     // Create user
     const user = await userService.createUser({ email, password, name });
-
-    // Generate tokens
-    const jwtSecret = c.env?.JWT_SECRET;
-    if (!jwtSecret) {
-      createError('Authentication service unavailable', 500);
-    }
 
     const accessToken = AuthUtils.generateAccessToken(user, jwtSecret);
     const refreshToken = AuthUtils.generateRefreshToken();

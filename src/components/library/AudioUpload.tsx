@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { 
   Modal, 
   Title, 
@@ -12,26 +12,31 @@ import {
   Progress,
   Alert,
   Select,
-  TextInput
+  TextInput,
+  ActionIcon,
+  Center
 } from '@mantine/core';
 import { 
+  IconMicrophone,
   IconUpload,
-  IconFile,
+  IconMusic,
   IconCheck,
   IconAlertCircle,
-  IconX
+  IconX,
+  IconPlayerStop,
+  IconPlayerRecord
 } from '@tabler/icons-react';
 // Using native HTML file input with drag-and-drop
 import { useApi } from '@/lib/api';
 import { useCoursesWithSWR } from '@/hooks/useCoursesWithSWR';
 
-interface DocumentUploadProps {
+interface AudioUploadProps {
   opened: boolean;
   onClose: () => void;
   preselectedCourseId?: string;
 }
 
-interface UploadedFile {
+interface UploadedAudio {
   name: string;
   size: number;
   type: string;
@@ -39,13 +44,22 @@ interface UploadedFile {
   progress: number;
   status: 'uploading' | 'processing' | 'completed' | 'error';
   error?: string;
+  duration?: number;
+  transcription?: {
+    topicCount: number;
+    memoryCount: number;
+  };
 }
 
-export function DocumentUpload({ opened, onClose, preselectedCourseId }: DocumentUploadProps) {
-  const [files, setFiles] = useState<UploadedFile[]>([]);
+export function AudioUpload({ opened, onClose, preselectedCourseId }: AudioUploadProps) {
+  const [files, setFiles] = useState<UploadedAudio[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<string | null>(preselectedCourseId || null);
-  const [processingMode, setProcessingMode] = useState<string>('hybrid');
   const [customTags, setCustomTags] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
   const api = useApi();
 
   // Get courses from API - no more hardcoded options
@@ -64,16 +78,10 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
     }
   }, [preselectedCourseId]);
 
-  const processingOptions = [
-    { value: 'hybrid', label: 'Hybrid Processing (Recommended)' },
-    { value: 'self-hosted', label: 'Self-hosted Processing' },
-    { value: 'api', label: 'API Processing' },
-  ];
-
   const handleFilesSelected = (selectedFiles: FileList | null) => {
     if (!selectedFiles) return;
     
-    const newFiles: UploadedFile[] = Array.from(selectedFiles).map(file => ({
+    const newFiles: UploadedAudio[] = Array.from(selectedFiles).map(file => ({
       name: file.name,
       size: file.size,
       type: file.type,
@@ -85,7 +93,7 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
     setFiles(prev => [...prev, ...newFiles]);
     
     // Start upload process for each file
-    newFiles.forEach(uploadFile);
+    newFiles.forEach(uploadAudioFile);
   };
 
   const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -103,7 +111,7 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
     handleFilesSelected(event.dataTransfer.files);
   };
 
-  const uploadFile = async (uploadedFile: UploadedFile) => {
+  const uploadAudioFile = async (uploadedFile: UploadedAudio) => {
     try {
       // Update file status to uploading
       setFiles(prev => prev.map(f => 
@@ -120,39 +128,62 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
           }
           return f;
         }));
-      }, 200);
+      }, 300);
 
       // Create form data for actual upload
       const formData = new FormData();
       formData.append('file', uploadedFile.file);
-      formData.append('processingMode', processingMode);
       if (selectedCourse) {
-        formData.append('course', selectedCourse);
+        formData.append('courseId', selectedCourse);
       }
-      if (customTags) {
-        formData.append('tags', customTags);
-      }
+      
+      const options: any = {
+        model: 'whisper-large-v3-turbo',
+        language: 'en'
+      };
+      formData.append('options', JSON.stringify(options));
 
-      // For now, simulate upload (replace with actual API call when backend supports file upload)
-      setTimeout(() => {
-        clearInterval(progressInterval);
-        
-        // Simulate processing phase
-        setFiles(prev => prev.map(f => 
-          f.name === uploadedFile.name 
-            ? { ...f, status: 'processing', progress: 100 }
-            : f
-        ));
-
-        // Simulate completion
-        setTimeout(() => {
+      // Call the actual audio upload API
+      setTimeout(async () => {
+        try {
+          clearInterval(progressInterval);
+          
+          // Update to processing phase
           setFiles(prev => prev.map(f => 
             f.name === uploadedFile.name 
-              ? { ...f, status: 'completed' }
+              ? { ...f, status: 'processing', progress: 100 }
               : f
           ));
-        }, 2000);
-      }, 2000);
+
+          // Make the actual API call to /api/audio/upload
+          const response = await api.uploadAudio(formData);
+          
+          if (response.success) {
+            setFiles(prev => prev.map(f => 
+              f.name === uploadedFile.name 
+                ? { 
+                    ...f, 
+                    status: 'completed',
+                    transcription: {
+                      topicCount: response.transcription.topicCount,
+                      memoryCount: response.memories.count
+                    }
+                  }
+                : f
+            ));
+          } else {
+            throw new Error('Upload failed');
+          }
+
+        } catch (error) {
+          console.error('Audio upload error:', error);
+          setFiles(prev => prev.map(f => 
+            f.name === uploadedFile.name 
+              ? { ...f, status: 'error', error: error instanceof Error ? error.message : 'Transcription failed' }
+              : f
+          ));
+        }
+      }, 500); // Reduced delay for better UX
 
     } catch (error) {
       setFiles(prev => prev.map(f => 
@@ -160,6 +191,72 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
           ? { ...f, status: 'error', error: 'Upload failed' }
           : f
       ));
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      
+      const chunks: BlobPart[] = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunks.push(event.data);
+        }
+      };
+      
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/wav' });
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+        const fileName = `recording-${timestamp}.wav`;
+        const file = new File([blob], fileName, { type: 'audio/wav' });
+        
+        // Add to files list and start upload
+        const uploadedFile: UploadedAudio = {
+          name: fileName,
+          size: blob.size,
+          type: 'audio/wav',
+          file,
+          progress: 0,
+          status: 'uploading'
+        };
+        
+        setFiles(prev => [...prev, uploadedFile]);
+        uploadAudioFile(uploadedFile);
+      };
+      
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      
+      // Start timer
+      timerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+      
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      alert('Could not access microphone. Please check permissions.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+      
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
     }
   };
 
@@ -175,6 +272,12 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'uploading': return 'blue';
@@ -188,17 +291,23 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
   const getStatusText = (status: string) => {
     switch (status) {
       case 'uploading': return 'Uploading...';
-      case 'processing': return 'Processing document...';
-      case 'completed': return 'Ready';
+      case 'processing': return 'Transcribing audio...';
+      case 'completed': return 'Transcription complete';
       case 'error': return 'Failed';
       default: return 'Unknown';
     }
   };
 
   const handleClose = () => {
+    // Stop any ongoing recording
+    if (isRecording) {
+      stopRecording();
+    }
+    
     setFiles([]);
     setSelectedCourse(null);
     setCustomTags('');
+    setRecordingTime(0);
     onClose();
   };
 
@@ -206,14 +315,14 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
     <Modal 
       opened={opened} 
       onClose={handleClose}
-      title="Upload Documents"
+      title="Upload Audio Files"
       size="lg"
       centered
     >
       <Stack gap="lg">
         {/* Upload Configuration */}
         <Box>
-          <Title order={4} mb="sm">Upload Settings</Title>
+          <Title order={4} mb="sm">Audio Settings</Title>
           
           <Stack gap="md">
             <Select
@@ -226,32 +335,57 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
               clearable
             />
             
-            <Select
-              label="Processing Mode"
-              data={processingOptions}
-              value={processingMode}
-              onChange={(value) => setProcessingMode(value || 'hybrid')}
-              description="Choose how documents should be processed"
-            />
-            
             <TextInput
               label="Additional Tags"
-              placeholder="lecture, notes, chapter-1 (comma separated)"
+              placeholder="lecture, discussion, lab-session (comma separated)"
               value={customTags}
               onChange={(e) => setCustomTags(e.target.value)}
-              description="Add custom tags to help organize your documents"
+              description="Add custom tags to help organize your audio content"
             />
           </Stack>
         </Box>
 
+        {/* Recording Section */}
+        <Box>
+          <Title order={4} mb="sm">Record Audio</Title>
+          
+          <Center>
+            <Stack align="center" gap="md">
+              <ActionIcon
+                size={80}
+                radius="xl"
+                variant={isRecording ? "filled" : "outline"}
+                color={isRecording ? "red" : "blue"}
+                onClick={isRecording ? stopRecording : startRecording}
+              >
+                {isRecording ? (
+                  <IconPlayerStop size={40} />
+                ) : (
+                  <IconPlayerRecord size={40} />
+                )}
+              </ActionIcon>
+              
+              <Text size="lg" fw={500}>
+                {isRecording ? `Recording: ${formatTime(recordingTime)}` : 'Tap to start recording'}
+              </Text>
+              
+              {isRecording && (
+                <Text size="sm" c="dimmed">
+                  Tap the button again to stop and upload
+                </Text>
+              )}
+            </Stack>
+          </Center>
+        </Box>
+
         {/* File Upload Area */}
         <Box>
-          <Title order={4} mb="sm">Select Files</Title>
+          <Title order={4} mb="sm">Or Upload Audio Files</Title>
           
           <Box
             onDragOver={handleDragOver}
             onDrop={handleDrop}
-            onClick={() => document.getElementById('document-file-input')?.click()}
+            onClick={() => document.getElementById('audio-file-input')?.click()}
             style={{
               border: '2px dashed #e2e8f0',
               borderRadius: 8,
@@ -269,10 +403,10 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
             }}
           >
             <input
-              id="document-file-input"
+              id="audio-file-input"
               type="file"
               multiple
-              accept=".pdf,.doc,.docx,.txt,.md"
+              accept=".mp3,.wav,.m4a,.flac,.ogg,.webm"
               onChange={handleFileInputChange}
               style={{ display: 'none' }}
             />
@@ -280,7 +414,7 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
             <IconUpload size={48} color="#64748b" style={{ marginBottom: '1rem' }} />
             
             <Text size="lg" mb="xs" style={{ color: '#1e293b' }}>
-              Drag & drop files here
+              Drag & drop audio files here
             </Text>
             
             <Text size="sm" c="dimmed" mb="md">
@@ -288,7 +422,7 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
             </Text>
             
             <Text size="xs" c="dimmed">
-              Supports PDF, DOC, DOCX, TXT, MD files up to 10MB
+              Supports MP3, WAV, M4A, FLAC, OGG, WebM files up to 100MB
             </Text>
           </Box>
         </Box>
@@ -296,7 +430,7 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
         {/* File List */}
         {files.length > 0 && (
           <Box>
-            <Title order={4} mb="sm">Uploading Files</Title>
+            <Title order={4} mb="sm">Processing Audio</Title>
             
             <Stack gap="sm">
               {files.map((file, index) => (
@@ -311,7 +445,7 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
                 >
                   <Group justify="space-between" align="flex-start" mb="sm">
                     <Group gap="sm">
-                      <IconFile size={20} color="#64748b" />
+                      <IconMusic size={20} color="#64748b" />
                       <Box>
                         <Text size="sm" fw={500}>{file.name}</Text>
                         <Text size="xs" c="dimmed">
@@ -341,9 +475,12 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
                     />
                   )}
                   
-                  {file.status === 'completed' && (
+                  {file.status === 'completed' && file.transcription && (
                     <Alert icon={<IconCheck size={16} />} color="green" variant="light">
-                      Document processed successfully and added to your library
+                      <Text size="sm">
+                        Transcription complete! Created {file.transcription.memoryCount} memories 
+                        across {file.transcription.topicCount} topics
+                      </Text>
                     </Alert>
                   )}
                   
@@ -361,7 +498,7 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
         {/* Actions */}
         <Group justify="flex-end">
           <Button variant="outline" onClick={handleClose}>
-            {files.some(f => f.status === 'uploading' || f.status === 'processing') ? 'Cancel' : 'Close'}
+            {files.some(f => f.status === 'uploading' || f.status === 'processing') || isRecording ? 'Cancel' : 'Close'}
           </Button>
           
           {files.length > 0 && files.every(f => f.status === 'completed') && (

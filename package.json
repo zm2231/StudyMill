@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@mantine/core": "^8.2.5",
+    "@mantine/dates": "^8.2.5",
     "@mantine/form": "^8.2.5",
     "@mantine/hooks": "^8.2.5",
     "@mantine/modals": "^8.2.5",
@@ -22,11 +23,13 @@
     "@tabler/icons-react": "^3.34.1",
     "better-upload": "^1.1.0",
     "clsx": "^2.1.1",
+    "dayjs": "^1.11.13",
     "next": "15.4.6",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "swr": "^2.3.6",
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
