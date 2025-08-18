@@ -213,20 +213,49 @@ export class DocumentService {
       createError('Document not found', 404);
     }
 
-    // Generate signed URL for R2 object
-    const signedUrl = await this.r2Bucket.get(document.r2_key, {
-      onlyIf: {
-        // Add conditional check to ensure object exists
+    try {
+      // Check if the object exists in R2
+      const object = await this.r2Bucket.head(document.r2_key);
+      if (!object) {
+        createError('Document file not found in storage', 404);
       }
-    });
 
-    if (!signedUrl) {
-      createError('Document file not found in storage', 404);
+      // For Cloudflare R2, we can use pre-signed URLs via the R2 API
+      // Since Cloudflare R2 is S3-compatible, we can generate signed URLs
+      // However, Workers runtime doesn't have direct signed URL generation
+      
+      // Option 1: Return a proxy URL through our API (recommended for security)
+      const proxyUrl = `/api/v1/documents/${documentId}/download?expires=${Date.now() + (expiresIn * 1000)}`;
+      
+      // Option 2: If R2 bucket has public access configured with custom domain
+      // const publicUrl = `https://your-r2-domain.com/${document.r2_key}`;
+      
+      // Option 3: Direct R2 URL (requires bucket to be publicly readable)
+      // Note: Only use if bucket is configured for public access
+      // const directUrl = `https://pub-${bucketId}.r2.dev/${document.r2_key}`;
+
+      return proxyUrl;
+
+    } catch (error) {
+      console.error('Failed to generate signed URL:', error);
+      createError('Failed to generate download URL', 500);
     }
+  }
 
-    // For now, return a placeholder URL structure
-    // In production, you'd implement proper signed URL generation
-    return `/api/v1/documents/${documentId}/download`;
+  /**
+   * Get MIME type for file extension
+   */
+  private getMimeType(fileType: string): string {
+    const mimeTypes: Record<string, string> = {
+      'pdf': 'application/pdf',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'doc': 'application/msword',
+      'txt': 'text/plain',
+      'md': 'text/markdown',
+      'rtf': 'application/rtf'
+    };
+    
+    return mimeTypes[fileType.toLowerCase()] || 'application/octet-stream';
   }
 
   /**

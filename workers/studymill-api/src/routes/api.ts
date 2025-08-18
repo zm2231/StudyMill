@@ -8,7 +8,7 @@ import { DocumentProcessorService } from '../services/documentProcessor';
 import { VectorService } from '../services/vector';
 import { SemanticSearchService } from '../services/semanticSearch';
 import { createAudioProcessor, AudioProcessor } from '../services/audioProcessor';
-import { MemoryService } from '../services/memory';
+import { EnhancedMemoryService } from '../services/enhancedMemory';
 import { memoryRoutes } from './memories';
 
 export const apiRoutes = new Hono();
@@ -871,7 +871,7 @@ audioRoutes.post('/upload', async (c) => {
 
     // Create proper memories in the memory system
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
+    const memoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
     
     const memories = await AudioProcessor.createMemoriesWithMemoryService(
       memoryService,
@@ -1007,7 +1007,7 @@ audioRoutes.get('/:id', async (c) => {
   const userId = c.get('userId');
   
   const dbService = new DatabaseService(c.env.DB);
-  const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+  const memoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
   
   try {
     const fullTranscription = await memoryService.getFullAudioTranscription(userId, audioFileId);
@@ -1044,7 +1044,7 @@ audioRoutes.get('/:id/timestamp/:startTime/:endTime', async (c) => {
   }
   
   const dbService = new DatabaseService(c.env.DB);
-  const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+  const memoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
   
   try {
     const memories = await memoryService.searchAudioMemoriesByTimestamp(
@@ -1082,7 +1082,7 @@ audioRoutes.get('/:id/topic/:topic', async (c) => {
   const userId = c.get('userId');
   
   const dbService = new DatabaseService(c.env.DB);
-  const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+  const memoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
   
   try {
     const memories = await memoryService.getAudioMemoriesByTopic(userId, audioFileId, topic);

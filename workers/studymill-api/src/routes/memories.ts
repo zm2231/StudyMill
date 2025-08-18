@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { createError } from '../middleware/error';
+import { EnhancedMemoryService } from '../services/enhancedMemory';
 import { MemoryService } from '../services/memory';
 import { DatabaseService } from '../services/database';
 
@@ -21,7 +22,7 @@ memoryRoutes.get('/', async (c) => {
   try {
     const userId = c.get('userId');
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
+    const memoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
 
     // Get query parameters for filtering
     const sourceType = c.req.query('source_type');
@@ -55,7 +56,7 @@ memoryRoutes.get('/:id', async (c) => {
     const userId = c.get('userId');
     const memoryId = c.req.param('id');
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
+    const memoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
 
     const memory = await memoryService.getMemory(memoryId, userId);
     
@@ -83,7 +84,7 @@ memoryRoutes.post('/', async (c) => {
     }
 
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
+    const memoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
 
     const memory = await memoryService.createMemory(userId, {
       content,
@@ -108,7 +109,7 @@ memoryRoutes.put('/:id', async (c) => {
     const body = await c.req.json();
     
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
+    const memoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
 
     const memory = await memoryService.updateMemory(memoryId, userId, body);
     
@@ -130,7 +131,7 @@ memoryRoutes.delete('/:id', async (c) => {
     const memoryId = c.req.param('id');
     
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
+    const memoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
 
     const deleted = await memoryService.deleteMemory(memoryId, userId);
     
@@ -158,7 +159,7 @@ memoryRoutes.post('/search', async (c) => {
     }
 
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
+    const memoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
 
     const results = await memoryService.searchMemories(userId, query, {
       ...filters,
@@ -204,7 +205,7 @@ memoryRoutes.get('/:id/relations', async (c) => {
     const limit = parseInt(c.req.query('limit') || '10');
     
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
+    const memoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
 
     const relations = await memoryService.getMemoryRelations(memoryId, userId, limit);
 
@@ -212,6 +213,49 @@ memoryRoutes.get('/:id/relations', async (c) => {
   } catch (error: any) {
     if (error.status) throw error;
     throw createError(500, 'Failed to fetch memory relations', error.message);
+  }
+});
+
+// Synthesize memories using AI
+memoryRoutes.post('/synthesize', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const { 
+      memoryIds, 
+      focus,
+      maxResults = 5
+    } = await c.req.json();
+    
+    if (!memoryIds || !Array.isArray(memoryIds) || memoryIds.length === 0) {
+      return c.json({
+        success: false,
+        error: 'Memory IDs array is required'
+      }, 400);
+    }
+
+    const dbService = new DatabaseService(c.env.DB);
+    const memoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
+
+    // Use the AI synthesis functionality
+    const result = await memoryService.synthesizeMemories(userId, {
+      memoryIds,
+      focus: focus || 'comprehensive',
+      maxResults,
+      includeRelated: true,
+      minSimilarity: 0.7
+    });
+
+    return c.json({
+      success: true,
+      synthesis: result
+    });
+
+  } catch (error) {
+    console.error('Memory synthesis failed:', error);
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Memory synthesis failed'
+    }, 500);
   }
 });
 

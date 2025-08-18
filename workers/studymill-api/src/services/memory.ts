@@ -250,27 +250,93 @@ export class MemoryService {
    * Search memories using vector similarity and keyword search
    */
   async searchMemories(userId: string, query: string, filters: MemorySearchFilters = {}): Promise<any[]> {
-    // This is a simplified implementation - in a real scenario, you'd use
-    // the SemanticSearchService to search memory chunks with user partitioning
-    const memories = await this.getMemories(userId, {
-      sourceType: filters.sourceType,
-      containerTags: filters.containerTags,
-      limit: filters.limit || 10
-    });
+    try {
+      // Generate query embedding for semantic search
+      const queryEmbedding = await this.vectorService.generateQueryEmbedding(query);
 
-    // Simple text search for now - should be replaced with vector search
-    const searchResults = memories.filter(memory => 
-      memory.content.toLowerCase().includes(query.toLowerCase())
-    );
+      // Build vector filter for user partitioning and additional filters
+      const vectorFilter: Record<string, any> = {
+        user_id: { "$eq": userId },
+        source_type: { "$eq": "memory" } // Search specifically in memory embeddings
+      };
 
-    return searchResults.map(memory => ({
-      id: memory.id,
-      score: 0.8, // Placeholder score
-      content: memory.content,
-      sourceType: memory.sourceType,
-      containerTags: memory.containerTags,
-      metadata: memory.metadata
-    }));
+      if (filters.sourceType) {
+        vectorFilter.memory_source_type = { "$eq": filters.sourceType };
+      }
+
+      // Search vectors using Vectorize
+      const vectorResults = await this.vectorService.searchVectors(queryEmbedding, {
+        topK: filters.limit || 10,
+        filter: vectorFilter,
+        includeMetadata: true
+      });
+
+      if (vectorResults.length === 0) {
+        return [];
+      }
+
+      // Get memory IDs from vector results (assuming memory chunks point to memory IDs)
+      const memoryIds = vectorResults.map(result => 
+        result.metadata?.memory_id || result.id
+      ).filter(Boolean);
+
+      // Fetch corresponding memories from database
+      if (memoryIds.length === 0) {
+        return [];
+      }
+
+      const placeholders = memoryIds.map(() => '?').join(',');
+      const result = await this.dbService.db.prepare(`
+        SELECT * FROM memories 
+        WHERE id IN (${placeholders}) 
+          AND user_id = ?
+          AND deleted_at IS NULL
+        ORDER BY updated_at DESC
+      `).bind(...memoryIds, userId).all();
+
+      const memories = result.results as any[];
+
+      // Map vector scores to memories
+      return memories.map(memory => {
+        const vectorMatch = vectorResults.find(v => 
+          v.metadata?.memory_id === memory.id || v.id === memory.id
+        );
+        
+        return {
+          id: memory.id,
+          score: vectorMatch?.score || 0.0, // Real similarity score from vector search
+          content: memory.content,
+          sourceType: memory.source_type,
+          containerTags: memory.container_tags ? JSON.parse(memory.container_tags) : [],
+          metadata: memory.metadata ? JSON.parse(memory.metadata) : {},
+          createdAt: memory.created_at,
+          updatedAt: memory.updated_at
+        };
+      }).sort((a, b) => b.score - a.score); // Sort by relevance score
+
+    } catch (error) {
+      console.error('Vector search failed, falling back to keyword search:', error);
+      
+      // Fallback to simple keyword search if vector search fails
+      const memories = await this.getMemories(userId, {
+        sourceType: filters.sourceType,
+        containerTags: filters.containerTags,
+        limit: filters.limit || 10
+      });
+
+      const searchResults = memories.filter(memory => 
+        memory.content.toLowerCase().includes(query.toLowerCase())
+      );
+
+      return searchResults.map((memory, index) => ({
+        id: memory.id,
+        score: 1.0 / (index + 1), // Simple ranking score as fallback
+        content: memory.content,
+        sourceType: memory.sourceType,
+        containerTags: memory.containerTags,
+        metadata: memory.metadata
+      }));
+    }
   }
 
   /**

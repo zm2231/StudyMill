@@ -274,15 +274,78 @@ export class AsyncDocumentProcessor {
     error?: string;
   }> {
     try {
-      // This would query the database for user jobs
-      // Implementation depends on your D1 database schema
-      
       const limit = Math.min(options.limit || 20, 100);
       const offset = options.offset || 0;
       
-      // Query jobs from database (placeholder)
-      const jobs: ProcessingJob[] = [];
-      const total = 0;
+      // Build query conditions
+      const conditions: string[] = ['d.user_id = ?'];
+      const params: any[] = [userId];
+      
+      if (options.status) {
+        conditions.push('d.processing_status = ?');
+        params.push(options.status);
+      }
+      
+      if (options.courseId) {
+        conditions.push('d.course_id = ?');
+        params.push(options.courseId);
+      }
+      
+      const whereClause = conditions.join(' AND ');
+      
+      // Get total count
+      const countResult = await this.dbService.db.prepare(`
+        SELECT COUNT(*) as total
+        FROM documents d
+        WHERE ${whereClause}
+      `).bind(...params).first();
+      
+      const total = (countResult as any)?.total || 0;
+      
+      // Get jobs with pagination
+      const jobsResult = await this.dbService.db.prepare(`
+        SELECT 
+          d.id,
+          d.user_id,
+          d.course_id,
+          d.file_name,
+          d.file_type,
+          d.file_size,
+          d.storage_key as r2_key,
+          d.processing_status,
+          d.processing_error,
+          d.created_at,
+          d.updated_at,
+          c.name as course_name
+        FROM documents d
+        LEFT JOIN courses c ON d.course_id = c.id
+        WHERE ${whereClause}
+        ORDER BY d.created_at DESC
+        LIMIT ? OFFSET ?
+      `).bind(...params, limit, offset).all();
+      
+      // Transform database results to ProcessingJob format
+      const jobs: ProcessingJob[] = (jobsResult.results as any[]).map(row => ({
+        id: row.id,
+        userId: row.user_id,
+        courseId: row.course_id,
+        fileName: row.file_name,
+        fileType: row.file_type,
+        fileSize: row.file_size,
+        r2Key: row.r2_key,
+        status: row.processing_status as ProcessingJobStatus,
+        priority: 'normal' as const, // Default priority
+        createdAt: new Date(row.created_at),
+        updatedAt: new Date(row.updated_at),
+        processingOptions: {
+          preserveFormatting: true,
+          extractMetadata: true,
+          requireAdvancedFeatures: false
+        },
+        error: row.processing_error || undefined,
+        // Add course name to metadata if available
+        courseName: row.course_name
+      }));
       
       return {
         success: true,

@@ -200,6 +200,29 @@ export class DatabaseService {
     return result.results || [];
   }
 
+  // Query method that returns the first result or null
+  async queryFirst(sql: string, params: any[] = []): Promise<any | null> {
+    const result = await this.db.prepare(sql).bind(...params).first();
+    return result || null;
+  }
+
+  // Execute method for INSERT/UPDATE/DELETE operations
+  async execute(sql: string, params: any[] = []): Promise<{ success: boolean; meta: any }> {
+    try {
+      const result = await this.db.prepare(sql).bind(...params).run();
+      return {
+        success: result.success || true,
+        meta: result.meta || { changes: result.changes || 0 }
+      };
+    } catch (error) {
+      console.error('Database execute error:', error);
+      return {
+        success: false,
+        meta: { error: error.message }
+      };
+    }
+  }
+
   // Utility method to check if database is healthy
   async healthCheck(): Promise<boolean> {
     try {

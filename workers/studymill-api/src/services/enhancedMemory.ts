@@ -74,7 +74,8 @@ export class EnhancedMemoryService {
   constructor(
     private dbService: DatabaseService,
     private vectorizeIndex: VectorizeIndex,
-    private aiBinding: any
+    private aiBinding: any,
+    private geminiApiKey?: string
   ) {
     this.vectorService = new VectorService(aiBinding, vectorizeIndex, dbService);
     this.tagService = new TagService(dbService);
@@ -115,7 +116,7 @@ export class EnhancedMemoryService {
         memory.userId,
         memory.content,
         memory.sourceType,
-        memory.sourceId,
+        memory.sourceId || null,
         JSON.stringify(memory.containerTags),
         JSON.stringify(memory.metadata),
         memory.createdAt,
@@ -574,12 +575,103 @@ export class EnhancedMemoryService {
   }
 
   /**
-   * Generate synthesis using LLM (placeholder - needs actual implementation)
+   * Generate synthesis using AI with multi-tier fallback system
+   * Primary: Gemini 2.5 Flash | Fallback: Cloudflare Workers AI | Final: User-friendly message
    */
   private async generateSynthesis(prompt: string): Promise<string> {
-    // This would call Gemini API for actual synthesis
-    // For now, return a placeholder
-    return `[Synthesis would be generated here using: ${prompt.substring(0, 100)}...]`;
+    // PRIORITY 1: Always try Gemini 2.5 Flash first if API key is available
+    if (this.geminiApiKey) {
+      try {
+        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': this.geminiApiKey
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: `You are an expert at synthesizing and connecting information from academic memories. 
+                
+Please create a comprehensive synthesis based on the following prompt:
+${prompt}
+
+Guidelines:
+- Connect related concepts and identify patterns
+- Highlight contradictions or differing perspectives if present
+- Synthesize the information into coherent insights
+- Maintain academic rigor and accuracy
+- Keep the synthesis concise but comprehensive (300-500 words)
+
+Synthesis:`
+              }]
+            }],
+            generationConfig: {
+              temperature: 0.7,
+              topK: 40,
+              topP: 0.8,
+              maxOutputTokens: 800,
+            }
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const synthesisText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          
+          if (synthesisText && synthesisText.trim().length > 0) {
+            console.log('✅ Memory synthesis generated using Gemini 2.5 Flash');
+            return synthesisText.trim();
+          } else {
+            console.warn('⚠️ Gemini returned empty content, retrying...');
+            // If Gemini returns empty, return error message instead of falling back
+            return `Memory synthesis temporarily unavailable. Gemini API returned empty content. Please try again in a moment.`;
+          }
+        } else {
+          console.error(`❌ Gemini API error: ${response.status} ${response.statusText}`);
+          // Only fall back to Llama if Gemini is truly unavailable (500+ errors)
+          if (response.status >= 500) {
+            console.log('🔄 Gemini server error, falling back to Cloudflare Workers AI...');
+          } else {
+            return `Memory synthesis temporarily unavailable. Gemini API error (${response.status}). Please try again later.`;
+          }
+        }
+      } catch (error) {
+        console.error('❌ Gemini fetch failed:', error);
+        console.log('🔄 Network/connection error, falling back to Cloudflare Workers AI...');
+      }
+    } else {
+      console.log('🔄 No Gemini API key provided, using Cloudflare Workers AI fallback...');
+    }
+
+    // FALLBACK: Only use Llama when Gemini is truly unavailable
+    // (no API key, server errors 500+, or network failures)
+    if (this.aiBinding) {
+      try {
+        console.log('⚠️ Using Cloudflare Workers AI (Llama 3.1) fallback for memory synthesis');
+        const result = await this.aiBinding.run('@cf/meta/llama-3.1-8b-instruct', {
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert at synthesizing academic information. Create comprehensive syntheses that connect concepts and identify patterns.'
+            },
+            {
+              role: 'user',
+              content: `Create a synthesis based on: ${prompt}`
+            }
+          ],
+          max_tokens: 500,
+          temperature: 0.7
+        });
+
+        return result.response || 'Synthesis could not be generated using fallback AI.';
+      } catch (error) {
+        console.error('❌ Cloudflare Workers AI also failed:', error);
+      }
+    }
+
+    // FINAL FALLBACK: User-friendly message when all AI services fail
+    return `Memory Synthesis Temporarily Unavailable\n\nWe're unable to generate an AI-powered synthesis of your memories right now due to a temporary service issue. This feature normally analyzes and connects the key concepts from your memories to help you better understand the material.\n\nWhat you can do:\n• Try again in a few minutes\n• Review your individual memories manually\n• Contact support if this issue persists\n\nWe apologize for the inconvenience and are working to restore full functionality.`;
   }
 
   // ... (include all the existing methods from the original MemoryService)
