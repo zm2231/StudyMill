@@ -1,9 +1,11 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { csrf } from 'hono/csrf';
 import { logger } from 'hono/logger';
 import { authRoutes } from './routes/auth';
 import { apiRoutes } from './routes/api';
 import { errorHandler } from './middleware/error';
+import { securityHeaders, secureCORS } from './middleware/security';
 
 type Bindings = {
   // Database bindings
@@ -29,13 +31,29 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-// Global middleware
+// Global middleware - Order matters for security
 app.use('*', logger());
-app.use('*', cors({
-  origin: ['http://localhost:3000', 'https://studymill.ai'],
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
+
+// Security headers (applied first)
+app.use('*', securityHeaders());
+
+// Secure CORS configuration
+app.use('*', secureCORS());
+
+// CSRF protection for state-changing operations
+app.use('*', csrf({
+  origin: (origin) => {
+    // Allow same-origin requests and approved origins
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'https://studymill.ai',
+      'https://www.studymill.ai',
+      'https://studymill-frontend.pages.dev',
+      'https://studymill.pages.dev',
+      'https://a8b6094b.studymill-frontend.pages.dev'
+    ];
+    return !origin || allowedOrigins.some(allowed => origin.startsWith(allowed));
+  }
 }));
 
 // Error handling

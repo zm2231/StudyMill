@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# StudyMill
 
-## Getting Started
+**Transform your documents and conversations into searchable memories with AI-powered study assistance.**
 
-First, run the development server:
+StudyMill is an intelligent study platform that helps students organize, process, and query their academic materials using advanced AI and memory management.
+
+🌐 **Try it live**: [studymill.ai](https://studymill.ai)
+
+---
+
+## ✨ Features
+
+- **📖 Document Processing**: Upload PDFs, DOCX files, and audio recordings
+- **🧠 Memory Creation**: Transform content into searchable, contextual memories  
+- **🔍 Smart Search**: Hybrid semantic + keyword search across all your materials
+- **💬 AI Chat**: Ask questions about your documents with source attribution
+- **🎯 Study Tools**: Organized by courses with intelligent content management
+
+---
+
+## 🚀 Quick Start
+
+### For Students
+
+1. **Sign up** at [studymill.ai](https://studymill.ai)
+2. **Create a course** to organize your materials
+3. **Upload documents** - PDFs, DOCX, or audio files
+4. **Start chatting** - Ask questions about your uploaded content
+5. **Search & study** - Find information across all your materials
+
+### For Developers
 
 ```bash
+# Clone and install
+git clone <repo-url>
+cd studymill
+npm install
+
+# Set up environment
+cp .env.example .env.local
+# Add your API keys
+
+# Run development
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🏗️ Tech Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Frontend**: Next.js 15 + Mantine UI
+- **Backend**: Cloudflare Workers + Hono.js  
+- **Database**: Cloudflare D1 (SQLite)
+- **AI**: Google Gemini + Cloudflare AI
+- **Search**: Cloudflare Vectorize + hybrid search
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## 🤝 Contributing
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+We welcome contributions! StudyMill incorporates memory management concepts inspired by [Supermemory](https://github.com/Dhravya/supermemory), adapted for academic use cases.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Getting Started
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
-## Deploy on Vercel
+### Development Guidelines
+- Follow existing code patterns
+- Add tests for new features
+- Update documentation as needed
+- Ensure all tests pass
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 📞 Support
+
+- **Issues**: [GitHub Issues](link-to-issues)
+- **Discussions**: [GitHub Discussions](link-to-discussions)
+- **Email**: [support contact]
+
+---
+
+**Built with ❤️ for students seeking smarter study tools**

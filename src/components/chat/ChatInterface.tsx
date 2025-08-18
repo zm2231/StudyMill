@@ -223,7 +223,7 @@ export function ChatInterface({
                     </Text>
                     <Text size="sm" c="dimmed" ta="center">
                       Ask me anything about your coursework, assignments, or study materials.
-                      I'm here to help with explanations, questions, and study guidance.
+                      I&apos;m here to help with explanations, questions, and study guidance.
                     </Text>
                   </Stack>
                 </Stack>

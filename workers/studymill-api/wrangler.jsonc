@@ -24,21 +24,90 @@
 			"vars": {
 				"ENVIRONMENT": "development",
 				"API_VERSION": "v1.0.0-dev",
-				"FRONTEND_URL": "http://localhost:3000"
+				"FRONTEND_URL": "http://localhost:3000",
+				"USE_HYBRID_PROCESSING": "true"
+			},
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "studymill-db",
+					"database_id": "ca164867-850c-46ca-bd89-597484b715d7"
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "BUCKET",
+					"bucket_name": "studymill-documents"
+				}
+			],
+			"vectorize": [
+				{
+					"binding": "VECTORIZE",
+					"index_name": "studymill-embeddings"
+				}
+			],
+			"ai": {
+				"binding": "AI"
 			}
 		},
 		"staging": {
 			"vars": {
 				"ENVIRONMENT": "staging",
 				"API_VERSION": "v1.0.0-staging",
-				"FRONTEND_URL": "https://staging.studymill.ai"
+				"FRONTEND_URL": "https://staging.studymill.ai",
+				"USE_HYBRID_PROCESSING": "true"
+			},
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "studymill-db",
+					"database_id": "ca164867-850c-46ca-bd89-597484b715d7"
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "BUCKET",
+					"bucket_name": "studymill-documents"
+				}
+			],
+			"vectorize": [
+				{
+					"binding": "VECTORIZE",
+					"index_name": "studymill-embeddings"
+				}
+			],
+			"ai": {
+				"binding": "AI"
 			}
 		},
 		"production": {
 			"vars": {
 				"ENVIRONMENT": "production",
 				"API_VERSION": "v1.0.0",
-				"FRONTEND_URL": "https://studymill.ai"
+				"FRONTEND_URL": "https://studymill.ai",
+				"USE_HYBRID_PROCESSING": "true"
+			},
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "studymill-db",
+					"database_id": "ca164867-850c-46ca-bd89-597484b715d7"
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "BUCKET",
+					"bucket_name": "studymill-documents"
+				}
+			],
+			"vectorize": [
+				{
+					"binding": "VECTORIZE",
+					"index_name": "studymill-embeddings"
+				}
+			],
+			"ai": {
+				"binding": "AI"
 			}
 		}
 	},
@@ -67,6 +136,11 @@
 			"index_name": "studymill-embeddings"
 		}
 	],
+	
+	// AI Binding for Cloudflare Workers AI
+	"ai": {
+		"binding": "AI"
+	},
 	
 	/**
 	 * Additional Cloudflare services (to be configured later)

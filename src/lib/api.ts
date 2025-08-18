@@ -147,13 +147,17 @@ class ApiClient {
         }
       }
 
-      const data = await response.json();
+      const data = await response.json() as Record<string, unknown>;
 
       if (!response.ok) {
-        throw new ApiErrorClass(data.error || 'API_ERROR', data.message || 'An error occurred', data.details);
+        throw new ApiErrorClass(
+          (data.error as string) || 'API_ERROR', 
+          (data.message as string) || 'An error occurred', 
+          data.details as string
+        );
       }
 
-      return data;
+      return data as T;
     } catch (error) {
       if (error instanceof Error && error.name === 'ApiError') {
         throw error;
@@ -186,7 +190,7 @@ class ApiClient {
         return false;
       }
 
-      const data = await response.json();
+      const data = await response.json() as { tokens: AuthTokens };
       this.setTokens(data.tokens);
       return true;
     } catch (error) {

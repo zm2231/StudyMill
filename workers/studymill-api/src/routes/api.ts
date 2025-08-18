@@ -7,6 +7,9 @@ import { DocumentService } from '../services/document';
 import { DocumentProcessorService } from '../services/documentProcessor';
 import { VectorService } from '../services/vector';
 import { SemanticSearchService } from '../services/semanticSearch';
+import { createAudioProcessor, AudioProcessor } from '../services/audioProcessor';
+import { MemoryService } from '../services/memory';
+import { memoryRoutes } from './memories';
 
 export const apiRoutes = new Hono();
 
@@ -244,6 +247,18 @@ documentsRoutes.post('/:id/process', async (c) => {
   const documentId = c.req.param('id');
   const userId = c.get('userId');
   
+  // Parse processing mode from request body
+  const body = await c.req.json().catch(() => ({}));
+  const processingMode = body.mode as 'basic' | 'premium' | 'auto' || 'auto';
+  
+  // Validate processing mode
+  if (!['basic', 'premium', 'auto'].includes(processingMode)) {
+    return c.json({
+      success: false,
+      error: 'Invalid processing mode. Must be "basic", "premium", or "auto"'
+    }, 400);
+  }
+  
   const dbService = new DatabaseService(c.env.DB);
   const documentService = new DocumentService(dbService, c.env.BUCKET);
   const processorService = new DocumentProcessorService(
@@ -255,14 +270,16 @@ documentsRoutes.post('/:id/process', async (c) => {
     c.env.GEMINI_API_KEY
   );
   
-  const job = await processorService.queueDocumentProcessing(documentId, userId);
+  const job = await processorService.queueDocumentProcessing(documentId, userId, processingMode);
   
   return c.json({
     success: true,
     job: {
       id: job.id,
       status: job.status,
-      progress: job.progress
+      progress: job.progress,
+      processingMode: job.processingMode,
+      costEstimate: job.costEstimate
     }
   }, 202);
 });
@@ -387,6 +404,31 @@ documentsRoutes.post('/:id/reindex', async (c) => {
     success: true,
     indexingStats: result
   }, 202);
+});
+
+// Get processing cost analytics for user
+documentsRoutes.get('/analytics/costs', async (c) => {
+  const userId = c.get('userId');
+  const days = parseInt(c.req.query('days') || '30');
+  
+  const dbService = new DatabaseService(c.env.DB);
+  const documentService = new DocumentService(dbService, c.env.BUCKET);
+  const processorService = new DocumentProcessorService(
+    dbService, 
+    documentService, 
+    c.env.BUCKET,
+    c.env.VECTORIZE,
+    c.env.PARSE_EXTRACT_API_KEY,
+    c.env.GEMINI_API_KEY
+  );
+  
+  const costSummary = await processorService.getUserCostSummary(userId, days);
+  
+  return c.json({
+    success: true,
+    period: `${days} days`,
+    costSummary
+  });
 });
 
 // Chat routes
@@ -670,6 +712,315 @@ assignmentsRoutes.delete('/:id', async (c) => {
   });
 });
 
+// Audio routes
+const audioRoutes = new Hono();
+
+// Upload and transcribe audio file
+audioRoutes.post('/upload', async (c) => {
+  const userId = c.get('userId');
+  const formData = await c.req.formData();
+  
+  const file = formData.get('file') as File;
+  const courseId = formData.get('courseId') as string;
+  const transcriptionOptions = formData.get('options') as string;
+  
+  if (!file) {
+    createError('Audio file is required', 400, { field: 'file' });
+  }
+  
+  if (!courseId) {
+    createError('Course ID is required', 400, { field: 'courseId' });
+  }
+
+  // Validate audio file type
+  const supportedTypes = [
+    'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/m4a', 
+    'audio/flac', 'audio/ogg', 'audio/webm'
+  ];
+  
+  if (!supportedTypes.includes(file.type)) {
+    createError('Unsupported audio format. Supported: MP3, WAV, M4A, FLAC, OGG, WebM', 400);
+  }
+
+  // Check file size (100MB limit for Groq dev tier)
+  const maxSize = 100 * 1024 * 1024; // 100MB
+  if (file.size > maxSize) {
+    createError(`Audio file too large. Maximum size: ${maxSize / 1024 / 1024}MB`, 400);
+  }
+
+  // Parse transcription options
+  let options = {};
+  if (transcriptionOptions) {
+    try {
+      options = JSON.parse(transcriptionOptions);
+    } catch (error) {
+      createError('Invalid transcription options JSON', 400);
+    }
+  }
+
+  const audioProcessor = createAudioProcessor(c.env);
+  const fileBuffer = await file.arrayBuffer();
+  
+  try {
+    // Transcribe the audio
+    const transcription = await audioProcessor.transcribeAudio(
+      fileBuffer,
+      file.name,
+      options
+    );
+
+    // Segment by topics
+    const topicSegments = await audioProcessor.segmentByTopics(transcription, userId);
+
+    // Generate audio file ID
+    const audioFileId = crypto.randomUUID();
+
+    // Create audio memory using simplified interface
+    const audioMemory = await audioProcessor.createMemoriesFromAudio(
+      transcription,
+      topicSegments,
+      audioFileId,
+      userId
+    );
+
+    // Create proper memories in the memory system
+    const dbService = new DatabaseService(c.env.DB);
+    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+    
+    const memories = await AudioProcessor.createMemoriesWithMemoryService(
+      memoryService,
+      transcription,
+      topicSegments,
+      audioFileId,
+      userId,
+      [courseId] // Use courseId as container tag
+    );
+    
+    return c.json({
+      success: true,
+      audioFileId,
+      transcription: {
+        id: audioMemory.id,
+        text: transcription.text,
+        language: transcription.language,
+        duration: transcription.duration,
+        processingTime: transcription.processingTime,
+        backend: transcription.backend,
+        segmentCount: transcription.segments.length,
+        topicCount: topicSegments.length
+      },
+      memories: {
+        count: memories.length,
+        topics: memories
+          .filter(m => m.metadata.memoryType === 'audio_topic_segment')
+          .map(m => ({
+            id: m.id,
+            topic: m.metadata.topic,
+            startTime: m.metadata.startTime,
+            endTime: m.metadata.endTime,
+            summary: m.metadata.summary,
+            keyPoints: m.metadata.keyPoints
+          })),
+        fullTranscription: memories.find(m => m.metadata.memoryType === 'audio_full_transcription')?.id
+      },
+      audioMemory: {
+        id: audioMemory.id,
+        topics: audioMemory.topics.map(t => ({
+          topic: t.topic,
+          startTime: t.startTime,
+          endTime: t.endTime,
+          summary: t.summary
+        })),
+        concepts: audioMemory.extractedConcepts,
+        metadata: audioMemory.metadata
+      }
+    }, 201);
+    
+  } catch (error) {
+    console.error('Audio transcription failed:', error);
+    throw error;
+  }
+});
+
+// Get supported audio formats
+audioRoutes.get('/supported-formats', async (c) => {
+  return c.json({
+    success: true,
+    supportedFormats: [
+      { 
+        extension: 'mp3', 
+        mimeType: 'audio/mpeg', 
+        description: 'MPEG Audio Layer III' 
+      },
+      { 
+        extension: 'wav', 
+        mimeType: 'audio/wav', 
+        description: 'Waveform Audio File' 
+      },
+      { 
+        extension: 'm4a', 
+        mimeType: 'audio/mp4', 
+        description: 'MPEG-4 Audio' 
+      },
+      { 
+        extension: 'flac', 
+        mimeType: 'audio/flac', 
+        description: 'Free Lossless Audio Codec' 
+      },
+      { 
+        extension: 'ogg', 
+        mimeType: 'audio/ogg', 
+        description: 'Ogg Vorbis' 
+      },
+      { 
+        extension: 'webm', 
+        mimeType: 'audio/webm', 
+        description: 'WebM Audio' 
+      }
+    ],
+    maxFileSize: 100 * 1024 * 1024, // 100MB
+    maxFileSizeMB: 100,
+    recommendedFormats: ['mp3', 'wav', 'm4a'],
+    backends: [
+      {
+        name: 'groq',
+        description: 'Groq Whisper API - Fast cloud transcription',
+        models: ['whisper-large-v3', 'whisper-large-v3-turbo'],
+        speedFactor: '216x real-time (turbo), 164x real-time (standard)',
+        cost: '$0.04/hour (turbo), $0.111/hour (standard)'
+      },
+      {
+        name: 'local',
+        description: 'Local WhisperKit (future) - Private offline transcription',
+        models: ['distil-whisper', 'whisper-large-v3'],
+        speedFactor: 'Varies by device',
+        cost: 'Free after model download',
+        status: 'Coming soon'
+      }
+    ]
+  });
+});
+
+// Get transcription status
+audioRoutes.get('/:id/status', async (c) => {
+  const transcriptionId = c.req.param('id');
+  const userId = c.get('userId');
+  
+  // TODO: Implement status checking from database
+  return c.json({
+    success: true,
+    transcriptionId,
+    status: 'completed', // pending, processing, completed, failed
+    message: 'Status checking not yet implemented'
+  });
+});
+
+// Get transcription details
+audioRoutes.get('/:id', async (c) => {
+  const audioFileId = c.req.param('id');
+  const userId = c.get('userId');
+  
+  const dbService = new DatabaseService(c.env.DB);
+  const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+  
+  try {
+    const fullTranscription = await memoryService.getFullAudioTranscription(userId, audioFileId);
+    
+    if (!fullTranscription) {
+      createError('Audio transcription not found', 404);
+    }
+    
+    return c.json({
+      success: true,
+      audioFileId,
+      transcription: {
+        id: fullTranscription.id,
+        text: fullTranscription.content,
+        metadata: fullTranscription.metadata,
+        createdAt: fullTranscription.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Failed to get transcription:', error);
+    throw error;
+  }
+});
+
+// Search audio memories by timestamp
+audioRoutes.get('/:id/timestamp/:startTime/:endTime', async (c) => {
+  const audioFileId = c.req.param('id');
+  const startTime = parseFloat(c.req.param('startTime'));
+  const endTime = parseFloat(c.req.param('endTime'));
+  const userId = c.get('userId');
+  
+  if (isNaN(startTime) || isNaN(endTime)) {
+    createError('Invalid timestamp format. Use numeric values in seconds.', 400);
+  }
+  
+  const dbService = new DatabaseService(c.env.DB);
+  const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+  
+  try {
+    const memories = await memoryService.searchAudioMemoriesByTimestamp(
+      userId, 
+      audioFileId, 
+      startTime, 
+      endTime
+    );
+    
+    return c.json({
+      success: true,
+      audioFileId,
+      timeRange: { startTime, endTime },
+      memories: memories.map(memory => ({
+        id: memory.id,
+        content: memory.content,
+        startTime: memory.metadata.startTime,
+        endTime: memory.metadata.endTime,
+        topic: memory.metadata.topic,
+        summary: memory.metadata.summary,
+        keyPoints: memory.metadata.keyPoints,
+        confidence: memory.metadata.confidence
+      }))
+    });
+  } catch (error) {
+    console.error('Failed to search by timestamp:', error);
+    throw error;
+  }
+});
+
+// Get audio memories by topic
+audioRoutes.get('/:id/topic/:topic', async (c) => {
+  const audioFileId = c.req.param('id');
+  const topic = c.req.param('topic');
+  const userId = c.get('userId');
+  
+  const dbService = new DatabaseService(c.env.DB);
+  const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.GEMINI_API_KEY);
+  
+  try {
+    const memories = await memoryService.getAudioMemoriesByTopic(userId, audioFileId, topic);
+    
+    return c.json({
+      success: true,
+      audioFileId,
+      topic,
+      memories: memories.map(memory => ({
+        id: memory.id,
+        content: memory.content,
+        startTime: memory.metadata.startTime,
+        endTime: memory.metadata.endTime,
+        summary: memory.metadata.summary,
+        keyPoints: memory.metadata.keyPoints,
+        confidence: memory.metadata.confidence
+      }))
+    });
+  } catch (error) {
+    console.error('Failed to get memories by topic:', error);
+    throw error;
+  }
+});
+
 // Flashcards routes
 const flashcardsRoutes = new Hono();
 
@@ -725,6 +1076,8 @@ flashcardsRoutes.get('/due', async (c) => {
 // Mount protected routes (after auth middleware)
 apiRoutes.route('/courses', coursesRoutes);
 apiRoutes.route('/documents', documentsRoutes);
+apiRoutes.route('/memories', memoryRoutes);
+apiRoutes.route('/audio', audioRoutes);
 apiRoutes.route('/chat', chatRoutes);
 apiRoutes.route('/search', searchRoutes);
 apiRoutes.route('/assignments', assignmentsRoutes);

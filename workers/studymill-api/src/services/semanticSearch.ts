@@ -134,8 +134,8 @@ export class SemanticSearchService {
     // Generate query embedding
     const queryVector = await this.vectorService.generateQueryEmbedding(query);
 
-    // Build filter conditions for Vectorize
-    const vectorFilter = this.buildVectorFilter(filters);
+    // Build filter conditions for Vectorize with user partitioning
+    const vectorFilter = this.buildVectorFilter(filters, userId);
 
     // Search vectors
     const vectorResults = await this.vectorService.searchVectors(queryVector, {
@@ -290,10 +290,12 @@ export class SemanticSearchService {
   }
 
   /**
-   * Build vector filter for Vectorize queries
+   * Build vector filter for Vectorize queries with mandatory user partitioning
    */
-  private buildVectorFilter(filters: SearchFilters): Record<string, any> | undefined {
-    const filter: Record<string, any> = {};
+  private buildVectorFilter(filters: SearchFilters, userId: string): Record<string, any> {
+    const filter: Record<string, any> = {
+      user_id: { "$eq": userId } // CRITICAL: Always filter by user for data isolation
+    };
 
     if (filters.courseId) {
       filter.course_id = { "$eq": filters.courseId };
@@ -307,7 +309,7 @@ export class SemanticSearchService {
       filter.document_id = { "$eq": filters.documentId };
     }
 
-    return Object.keys(filter).length > 0 ? filter : undefined;
+    return filter;
   }
 
   /**

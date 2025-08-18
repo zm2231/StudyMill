@@ -1,4 +1,5 @@
 import { ParseExtractService, DocumentChunk } from './parseExtract';
+import { UnifiedDocumentProcessor, UnifiedProcessingResult } from './unifiedDocumentProcessor';
 import { DocumentService } from './document';
 import { DatabaseService } from './database';
 import { VectorService } from './vector';
@@ -15,6 +16,9 @@ export interface ProcessingJob {
   completedAt?: string;
   chunkCount?: number;
   extractedText?: string;
+  processingMode?: 'basic' | 'premium' | 'auto';
+  costEstimate?: number;
+  actualCost?: number;
 }
 
 export interface ProcessedDocument {
@@ -29,8 +33,10 @@ export interface ProcessedDocument {
 
 export class DocumentProcessorService {
   private parseExtractService: ParseExtractService;
+  private unifiedProcessor: UnifiedDocumentProcessor;
   private vectorService: VectorService;
   private embeddingIndexerService: EmbeddingIndexerService;
+  private useHybridProcessing: boolean;
 
   constructor(
     private dbService: DatabaseService,
@@ -41,14 +47,22 @@ export class DocumentProcessorService {
     geminiApiKey: string
   ) {
     this.parseExtractService = new ParseExtractService(parseExtractApiKey);
+    this.unifiedProcessor = new UnifiedDocumentProcessor(parseExtractApiKey, r2Bucket, dbService);
     this.vectorService = new VectorService(geminiApiKey, vectorizeIndex, dbService);
     this.embeddingIndexerService = new EmbeddingIndexerService(this.vectorService, dbService);
+    
+    // Feature flag: Use hybrid processing by default
+    this.useHybridProcessing = process.env.USE_HYBRID_PROCESSING !== 'false';
   }
 
   /**
-   * Queue a document for processing
+   * Queue a document for processing with user-selected mode
    */
-  async queueDocumentProcessing(documentId: string, userId: string): Promise<ProcessingJob> {
+  async queueDocumentProcessing(
+    documentId: string, 
+    userId: string, 
+    processingMode: 'basic' | 'premium' | 'auto' = 'auto'
+  ): Promise<ProcessingJob> {
     // Verify document exists and belongs to user
     const document = await this.documentService.getDocument(documentId, userId);
     if (!document) {
@@ -56,11 +70,23 @@ export class DocumentProcessorService {
     }
 
     // Check if document type is processable
-    if (!ParseExtractService.isProcessableFileType(document.file_type)) {
+    const isProcessable = this.useHybridProcessing 
+      ? this.isProcessableFileType(document.file_type)
+      : ParseExtractService.isProcessableFileType(document.file_type);
+      
+    if (!isProcessable) {
       createError('Document type not supported for processing', 400, {
-        supportedTypes: ['PDF', 'DOCX', 'Images']
+        supportedTypes: this.useHybridProcessing 
+          ? ['PDF', 'DOCX', 'Images'] 
+          : ['PDF', 'DOCX', 'Images']
       });
     }
+
+    // Determine actual processing mode and cost estimate
+    const { actualMode, costEstimate, reasoning } = await this.determineProcessingMode(
+      document, 
+      processingMode
+    );
 
     // Create processing job
     const jobId = 'job_' + crypto.randomUUID();
@@ -69,14 +95,16 @@ export class DocumentProcessorService {
       documentId,
       status: 'pending',
       progress: 0,
-      startedAt: new Date().toISOString()
+      startedAt: new Date().toISOString(),
+      processingMode: actualMode,
+      costEstimate
     };
 
     // Update document status to processing
     await this.documentService.updateProcessingStatus(documentId, 'processing');
 
     // Start processing (in a real implementation, this would be queued)
-    this.processDocumentAsync(job, document.r2_key, document.file_type, document.filename);
+    this.processDocumentAsync(job, document.r2_key, document.file_type, document.filename, userId);
 
     return job;
   }
@@ -88,7 +116,8 @@ export class DocumentProcessorService {
     job: ProcessingJob, 
     r2Key: string, 
     fileType: string, 
-    fileName: string
+    fileName: string,
+    userId?: string
   ): Promise<void> {
     const startTime = Date.now();
 
@@ -106,23 +135,64 @@ export class DocumentProcessorService {
       const fileBuffer = await r2Object.arrayBuffer();
       job.progress = 20;
 
-      // Process with ParseExtract
-      const parseResult = await this.parseExtractService.processDocument(
-        fileBuffer, 
-        fileType, 
-        fileName
-      );
+      // Process with unified processor (hybrid strategy)
+      let processingResult: UnifiedProcessingResult;
+      
+      if (this.useHybridProcessing) {
+        // Determine processing options based on mode
+        const processingOptions = {
+          userId: userId || job.documentId, // Use provided userId or fallback to documentId
+          preserveFormatting: true,
+          extractMetadata: true,
+          // Force processing method based on user choice
+          ...(job.processingMode === 'basic' && { preferSelfHosted: true }),
+          ...(job.processingMode === 'premium' && { requireAdvancedFeatures: true })
+        };
 
-      if (!parseResult.success) {
-        throw new Error(parseResult.error || 'Processing failed');
+        processingResult = await this.unifiedProcessor.processDocument(
+          fileBuffer,
+          fileType,
+          fileName,
+          processingOptions
+        );
+      } else {
+        // Fallback to ParseExtract
+        const parseResult = await this.parseExtractService.processDocument(
+          fileBuffer, 
+          fileType, 
+          fileName
+        );
+        
+        if (!parseResult.success) {
+          throw new Error(parseResult.error || 'Processing failed');
+        }
+        
+        // Convert ParseExtract result to unified format
+        processingResult = {
+          success: parseResult.success,
+          isAsync: !!parseResult.jobId && !parseResult.data,
+          data: parseResult.data ? {
+            text: parseResult.data.text,
+            pages: parseResult.data.pages,
+            tables: parseResult.data.tables,
+            images: parseResult.data.images,
+            metadata: parseResult.data.metadata || {},
+            processingTime: 0
+          } : undefined,
+          error: parseResult.error
+        };
+      }
+
+      if (!processingResult.success) {
+        throw new Error(processingResult.error || 'Processing failed');
       }
 
       job.progress = 40;
 
-      // If async processing, wait for completion
-      let finalResult = parseResult;
-      if (parseResult.jobId && !parseResult.data) {
-        console.log(`Waiting for async processing job: ${parseResult.jobId}`);
+      // Handle async processing if needed
+      let finalResult = processingResult;
+      if (processingResult.isAsync && processingResult.data?.jobId && !finalResult.data?.text) {
+        console.log(`Waiting for async processing job: ${processingResult.data.jobId}`);
         
         // Poll for completion (in production, this would be handled by a queue)
         let attempts = 0;
@@ -131,20 +201,28 @@ export class DocumentProcessorService {
         while (attempts < maxAttempts) {
           await this.delay(10000); // Wait 10 seconds between checks
           
-          const statusResult = await this.parseExtractService.checkJobStatus(parseResult.jobId);
+          // Check status using unified processor
+          const statusResult = await this.unifiedProcessor.asyncProcessor.checkJobStatus(
+            processingResult.data.jobId, 
+            userId || job.documentId // Use provided userId or fallback to documentId
+          );
           
-          if (statusResult.success && statusResult.data) {
-            finalResult = statusResult;
+          if (statusResult.success && statusResult.data?.status === 'completed') {
+            finalResult = {
+              success: true,
+              isAsync: false,
+              data: statusResult.data.result ? JSON.parse(statusResult.data.result) : undefined
+            };
             break;
-          } else if (statusResult.error && statusResult.error !== 'Still processing') {
-            throw new Error(statusResult.error);
+          } else if (statusResult.data?.status === 'failed') {
+            throw new Error(statusResult.error || 'Async processing failed');
           }
           
           attempts++;
           job.progress = 40 + (attempts * 20 / maxAttempts); // Progress from 40% to 60%
         }
         
-        if (!finalResult.data) {
+        if (!finalResult.data?.text) {
           throw new Error('Processing timeout - job did not complete in time');
         }
       }
@@ -155,12 +233,18 @@ export class DocumentProcessorService {
 
       job.progress = 60;
 
-      // Create content chunks
-      const chunks = this.parseExtractService.chunkContent(
-        job.documentId,
-        parseResult.data,
-        1000 // Max chunk size
-      );
+      // Create content chunks using unified processor chunks or fallback
+      let chunks: DocumentChunk[];
+      if (finalResult.chunks && finalResult.chunks.length > 0) {
+        chunks = finalResult.chunks;
+      } else {
+        // Fallback: create chunks from the processed text
+        chunks = this.createDocumentChunks(
+          job.documentId,
+          finalResult.data,
+          1000 // Max chunk size
+        );
+      }
 
       job.progress = 80;
 
@@ -195,6 +279,9 @@ export class DocumentProcessorService {
         );
       }
 
+      // Calculate actual cost based on processing method used
+      const actualCost = this.calculateActualCost(finalResult, job.processingMode, job.costEstimate);
+      
       // Complete the job
       const processingTime = Date.now() - startTime;
       job.status = 'completed';
@@ -202,6 +289,10 @@ export class DocumentProcessorService {
       job.completedAt = new Date().toISOString();
       job.chunkCount = chunks.length;
       job.extractedText = finalResult.data.text?.substring(0, 500); // Preview
+      job.actualCost = actualCost;
+
+      // Log cost and processing analytics
+      await this.logProcessingAnalytics(job, finalResult, processingTime);
 
       // Update document status
       await this.documentService.updateProcessingStatus(job.documentId, 'completed');
@@ -537,6 +628,324 @@ export class DocumentProcessorService {
     });
 
     return results[documentId];
+  }
+
+  /**
+   * Determine the actual processing mode based on user choice and file characteristics
+   */
+  private async determineProcessingMode(
+    document: any, 
+    userMode: 'basic' | 'premium' | 'auto'
+  ): Promise<{
+    actualMode: 'basic' | 'premium';
+    costEstimate: number;
+    reasoning: string;
+  }> {
+    const fileSize = document.file_size || 0;
+    const fileName = document.filename || '';
+    const fileType = document.file_type || '';
+
+    // User explicitly chose a mode
+    if (userMode === 'basic') {
+      return {
+        actualMode: 'basic',
+        costEstimate: 0,
+        reasoning: 'User selected basic processing (free)'
+      };
+    }
+
+    if (userMode === 'premium') {
+      const cost = this.calculatePremiumCost(fileSize, fileType);
+      return {
+        actualMode: 'premium',
+        costEstimate: cost,
+        reasoning: 'User selected premium processing for advanced features'
+      };
+    }
+
+    // Auto mode: intelligent decision
+    const needsPremium = this.shouldUsePremiumProcessing(fileName, fileType, fileSize);
+    
+    if (needsPremium) {
+      const cost = this.calculatePremiumCost(fileSize, fileType);
+      return {
+        actualMode: 'premium',
+        costEstimate: cost,
+        reasoning: 'Auto-selected premium for complex document requiring tables/OCR'
+      };
+    }
+
+    return {
+      actualMode: 'basic',
+      costEstimate: 0,
+      reasoning: 'Auto-selected basic processing (suitable for text extraction)'
+    };
+  }
+
+  /**
+   * Calculate cost for premium processing
+   */
+  private calculatePremiumCost(fileSize: number, fileType: string): number {
+    // Base cost per document
+    let cost = 0.01; // $0.01 base
+
+    // Size-based pricing
+    const sizeInMB = fileSize / (1024 * 1024);
+    if (sizeInMB > 10) {
+      cost += (sizeInMB - 10) * 0.001; // $0.001 per MB over 10MB
+    }
+
+    // File type multipliers
+    if (fileType.includes('image')) {
+      cost *= 2; // OCR is more expensive
+    }
+
+    return Math.round(cost * 100) / 100; // Round to 2 decimal places
+  }
+
+  /**
+   * Determine if document should use premium processing in auto mode
+   */
+  private shouldUsePremiumProcessing(fileName: string, fileType: string, fileSize: number): boolean {
+    // File name patterns that suggest complex content
+    const complexKeywords = [
+      'financial', 'report', 'statement', 'contract', 'legal',
+      'spreadsheet', 'data', 'analysis', 'chart', 'graph', 'table'
+    ];
+    
+    const hasComplexKeyword = complexKeywords.some(keyword => 
+      fileName.toLowerCase().includes(keyword)
+    );
+
+    // File types that benefit from premium processing
+    const premiumBenefitTypes = [
+      'image/', // OCR needed
+      'vnd.ms-excel', // Complex tables
+      'vnd.ms-powerpoint' // Charts and diagrams
+    ];
+
+    const benefitsFromPremium = premiumBenefitTypes.some(type => 
+      fileType.includes(type)
+    );
+
+    // Large files often have complex layouts
+    const isLargeFile = fileSize > 20 * 1024 * 1024; // 20MB
+
+    return hasComplexKeyword || benefitsFromPremium || isLargeFile;
+  }
+
+  /**
+   * Check if file type is processable by unified processor
+   */
+  private isProcessableFileType(fileType: string): boolean {
+    const supportedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg',
+      'image/png',
+      'image/tiff'
+    ];
+    return supportedTypes.includes(fileType);
+  }
+
+  /**
+   * Create document chunks from processed data
+   */
+  private createDocumentChunks(
+    documentId: string, 
+    extractedData: any, 
+    maxChunkSize: number = 1000
+  ): DocumentChunk[] {
+    const chunks: DocumentChunk[] = [];
+    const text = extractedData.text || '';
+    
+    if (!text) {
+      return chunks;
+    }
+
+    // Split text into chunks
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    let currentChunk = '';
+    let chunkIndex = 0;
+
+    for (const sentence of sentences) {
+      const trimmedSentence = sentence.trim();
+      if (!trimmedSentence) continue;
+
+      // Check if adding this sentence would exceed chunk size
+      if (currentChunk.length + trimmedSentence.length > maxChunkSize && currentChunk.length > 0) {
+        // Create chunk from current text
+        chunks.push({
+          id: `chunk_${documentId}_${chunkIndex}`,
+          documentId,
+          chunkIndex,
+          content: currentChunk.trim(),
+          contentType: 'text',
+          characterCount: currentChunk.length,
+          metadata: {
+            source: 'unified-processor',
+            chunkMethod: 'sentence-based'
+          }
+        });
+
+        chunkIndex++;
+        currentChunk = trimmedSentence + '.';
+      } else {
+        currentChunk += (currentChunk ? ' ' : '') + trimmedSentence + '.';
+      }
+    }
+
+    // Add final chunk if there's remaining content
+    if (currentChunk.trim()) {
+      chunks.push({
+        id: `chunk_${documentId}_${chunkIndex}`,
+        documentId,
+        chunkIndex,
+        content: currentChunk.trim(),
+        contentType: 'text',
+        characterCount: currentChunk.length,
+        metadata: {
+          source: 'unified-processor',
+          chunkMethod: 'sentence-based'
+        }
+      });
+    }
+
+    return chunks;
+  }
+
+  /**
+   * Calculate actual cost after processing
+   */
+  private calculateActualCost(
+    result: UnifiedProcessingResult, 
+    mode?: 'basic' | 'premium' | 'auto',
+    estimatedCost?: number
+  ): number {
+    // Basic processing is always free
+    if (mode === 'basic' || (!result.data?.costEstimate && !estimatedCost)) {
+      return 0;
+    }
+
+    // Use actual cost from processor if available
+    if (result.data?.costEstimate) {
+      return result.data.costEstimate;
+    }
+
+    // Fallback to estimated cost
+    return estimatedCost || 0;
+  }
+
+  /**
+   * Log processing analytics for cost tracking and optimization
+   */
+  private async logProcessingAnalytics(
+    job: ProcessingJob,
+    result: UnifiedProcessingResult,
+    processingTime: number
+  ): Promise<void> {
+    try {
+      const analytics = {
+        job_id: job.id,
+        document_id: job.documentId,
+        processing_mode: job.processingMode || 'unknown',
+        estimated_cost: job.costEstimate || 0,
+        actual_cost: job.actualCost || 0,
+        processing_time_ms: processingTime,
+        success: result.success,
+        is_async: result.isAsync,
+        chunk_count: job.chunkCount || 0,
+        processing_method: result.data?.metadata?.processingMethod || 'unknown',
+        timestamp: new Date().toISOString()
+      };
+
+      // Store analytics in database (create table if needed)
+      await this.dbService.db.prepare(`
+        INSERT OR IGNORE INTO processing_analytics (
+          job_id, document_id, processing_mode, estimated_cost, actual_cost,
+          processing_time_ms, success, is_async, chunk_count, processing_method, timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        analytics.job_id,
+        analytics.document_id,
+        analytics.processing_mode,
+        analytics.estimated_cost,
+        analytics.actual_cost,
+        analytics.processing_time_ms,
+        analytics.success ? 1 : 0,
+        analytics.is_async ? 1 : 0,
+        analytics.chunk_count,
+        analytics.processing_method,
+        analytics.timestamp
+      ).run();
+
+      console.log('Processing analytics logged:', {
+        mode: analytics.processing_mode,
+        cost: `$${analytics.actual_cost}`,
+        time: `${analytics.processing_time_ms}ms`,
+        method: analytics.processing_method
+      });
+
+    } catch (error) {
+      console.warn('Failed to log processing analytics:', error);
+      // Don't fail the job if analytics logging fails
+    }
+  }
+
+  /**
+   * Get processing cost summary for a user
+   */
+  async getUserCostSummary(userId: string, days: number = 30): Promise<{
+    totalCost: number;
+    basicProcessingCount: number;
+    premiumProcessingCount: number;
+    averageCostPerDocument: number;
+    costByMode: Record<string, { count: number; totalCost: number }>;
+  }> {
+    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    const results = await this.dbService.db.prepare(`
+      SELECT 
+        pa.processing_mode,
+        COUNT(*) as count,
+        SUM(pa.actual_cost) as total_cost,
+        AVG(pa.actual_cost) as avg_cost
+      FROM processing_analytics pa
+      JOIN documents d ON pa.document_id = d.id
+      JOIN courses c ON d.course_id = c.id
+      WHERE c.user_id = ? AND pa.timestamp >= ?
+      GROUP BY pa.processing_mode
+    `).bind(userId, startDate).all();
+
+    const summary = {
+      totalCost: 0,
+      basicProcessingCount: 0,
+      premiumProcessingCount: 0,
+      averageCostPerDocument: 0,
+      costByMode: {} as Record<string, { count: number; totalCost: number }>
+    };
+
+    if (results.results) {
+      for (const row of results.results as any[]) {
+        const mode = row.processing_mode;
+        const count = row.count;
+        const totalCost = row.total_cost;
+
+        summary.costByMode[mode] = { count, totalCost };
+        summary.totalCost += totalCost;
+
+        if (mode === 'basic') {
+          summary.basicProcessingCount = count;
+        } else if (mode === 'premium') {
+          summary.premiumProcessingCount = count;
+        }
+      }
+
+      const totalDocuments = summary.basicProcessingCount + summary.premiumProcessingCount;
+      summary.averageCostPerDocument = totalDocuments > 0 ? summary.totalCost / totalDocuments : 0;
+    }
+
+    return summary;
   }
 
   /**
