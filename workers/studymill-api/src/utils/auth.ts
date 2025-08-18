@@ -59,12 +59,11 @@ export class AuthUtils {
       createError('JWT secret not configured', 500);
     }
     
-    const payload: AuthTokenPayload = {
+    const payload = {
       sub: user.id,
       email: user.email,
       name: user.name,
       iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours
     };
     
     try {

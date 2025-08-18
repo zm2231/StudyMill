@@ -13,15 +13,18 @@ import {
   Box,
   Paper,
   Divider,
-  Loader
+  Loader,
+  SimpleGrid
 } from "@mantine/core";
 import { 
   IconBook, 
   IconBrain, 
   IconUpload,
   IconBookmarks,
-  IconClock,
-  IconSchool
+  IconSearch,
+  IconSchool,
+  IconArrowRight,
+  IconCheck
 } from "@tabler/icons-react";
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
@@ -38,6 +41,13 @@ export default function Home() {
       router.push('/auth/register');
     }
   };
+
+  const benefits = [
+    "Transform PDFs into searchable knowledge",
+    "Get instant answers from your documents", 
+    "Organize materials across multiple courses",
+    "Study more efficiently with AI assistance"
+  ];
 
   return (
     <Box className="sanctuary-texture" style={{ minHeight: '100vh' }}>
@@ -82,7 +92,7 @@ export default function Home() {
                 letterSpacing: '0.01em'
               }}
             >
-              Your Academic Sanctuary
+              Transform Documents Into Searchable Knowledge
             </Text>
             
             <Text 
@@ -92,7 +102,7 @@ export default function Home() {
               style={{ 
                 margin: '0 auto',
                 color: 'var(--sanctuary-text-primary)',
-                maxWidth: '32rem'
+                maxWidth: '36rem'
               }}
             >
               A sophisticated study platform that transforms your academic workflow with 
@@ -107,7 +117,7 @@ export default function Home() {
                 <>
                   <Button 
                     size="lg" 
-                    leftSection={<IconUpload size={20} />}
+                    rightSection={<IconArrowRight size={20} />}
                     radius="sm"
                     onClick={handleGetStarted}
                     style={{
@@ -136,6 +146,10 @@ export default function Home() {
                 </>
               )}
             </Group>
+            
+            <Text size="sm" mt="md" style={{ color: 'var(--sanctuary-text-secondary)' }}>
+              Free to start • No credit card required • Built for students
+            </Text>
           </Paper>
 
           {/* Philosophy Section */}
@@ -149,9 +163,46 @@ export default function Home() {
                 margin: '0 auto'
               }}
             >
-&quot;Knowledge is not a commodity to be consumed, but a sanctuary to be cultivated.&quot;
+              "Knowledge is not a commodity to be consumed, but a sanctuary to be cultivated."
             </Text>
           </Box>
+
+          {/* Benefits Section */}
+          <Paper 
+            p="xl" 
+            radius="lg"
+            style={{
+              background: 'var(--sanctuary-surface)',
+              border: '1px solid var(--border-light)',
+            }}
+          >
+            <Title order={2} ta="center" mb="xl" style={{ color: 'var(--sanctuary-text-primary)' }}>
+              Why Students Choose StudyMill
+            </Title>
+            
+            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
+              {benefits.map((benefit, index) => (
+                <Group key={index} align="flex-start">
+                  <ActionIcon 
+                    size="sm" 
+                    variant="light" 
+                    color="forestGreen"
+                    radius="xl"
+                    style={{ marginTop: 2 }}
+                  >
+                    <IconCheck size={14} />
+                  </ActionIcon>
+                  <Text 
+                    size="md" 
+                    className="academic-content"
+                    style={{ color: 'var(--sanctuary-text-primary)', flex: 1 }}
+                  >
+                    {benefit}
+                  </Text>
+                </Group>
+              ))}
+            </SimpleGrid>
+          </Paper>
 
           <Divider 
             style={{ 
@@ -209,8 +260,8 @@ export default function Home() {
                     fontSize: '0.95rem'
                   }}
                 >
-                  Intelligent OCR and AI-powered extraction transforms your PDFs, documents, 
-                  and images into structured, searchable knowledge bases.
+                  Upload PDFs and DOCX files to automatically extract key insights with 
+                  AI-powered processing and transform them into searchable memories.
                 </Text>
                 <Badge 
                   mt="md" 
@@ -218,7 +269,7 @@ export default function Home() {
                   color="forestGreen"
                   style={{ fontWeight: 500 }}
                 >
-                  Core Infrastructure
+                  Smart Processing
                 </Badge>
               </Card>
 
@@ -252,8 +303,8 @@ export default function Home() {
                     fontSize: '0.95rem'
                   }}
                 >
-                  Course-aware conversational AI that provides contextual assistance, 
-                  explanations, and guidance tailored to your specific materials.
+                  Chat with your documents, get explanations, and receive personalized 
+                  study guidance tailored to your specific materials and courses.
                 </Text>
                 <Badge 
                   mt="md" 
@@ -279,12 +330,12 @@ export default function Home() {
                     color="forestGreen"
                     radius="sm"
                   >
-                    <IconBookmarks size={22} />
+                    <IconSearch size={22} />
                   </ActionIcon>
                   <Box style={{ flex: 1 }}>
-                    <Title order={3} mb="xs">Study Materials</Title>
+                    <Title order={3} mb="xs">Semantic Search</Title>
                     <Text size="sm" style={{ color: 'var(--sanctuary-text-secondary)' }}>
-                      Curation
+                      Discovery
                     </Text>
                   </Box>
                 </Group>
@@ -295,8 +346,8 @@ export default function Home() {
                     fontSize: '0.95rem'
                   }}
                 >
-                  Automatically generated flashcards with spaced repetition, comprehensive 
-                  study guides, and organized note-taking systems.
+                  Find information across all your materials with intelligent search that 
+                  understands context, not just keywords.
                 </Text>
                 <Badge 
                   mt="md" 
@@ -304,7 +355,7 @@ export default function Home() {
                   color="forestGreen"
                   style={{ fontWeight: 500 }}
                 >
-                  Study Tools
+                  Smart Search
                 </Badge>
               </Card>
 
@@ -322,12 +373,12 @@ export default function Home() {
                     color="warmAccents"
                     radius="sm"
                   >
-                    <IconClock size={22} />
+                    <IconBookmarks size={22} />
                   </ActionIcon>
                   <Box style={{ flex: 1 }}>
-                    <Title order={3} mb="xs">Academic Calendar</Title>
+                    <Title order={3} mb="xs">Memory Organization</Title>
                     <Text size="sm" style={{ color: 'var(--sanctuary-text-secondary)' }}>
-                      Organization
+                      Curation
                     </Text>
                   </Box>
                 </Group>
@@ -338,8 +389,8 @@ export default function Home() {
                     fontSize: '0.95rem'
                   }}
                 >
-                  Intelligent deadline tracking, assignment management, and study session 
-                  scheduling that adapts to your academic calendar.
+                  Organize knowledge into searchable memories, connected by topics and 
+                  courses, with intelligent tagging and categorization.
                 </Text>
                 <Badge 
                   mt="md" 
@@ -347,53 +398,133 @@ export default function Home() {
                   color="warmAccents"
                   style={{ fontWeight: 500 }}
                 >
-                  Time Management
+                  Organization
                 </Badge>
               </Card>
             </div>
           </Box>
 
-          {/* Development Status with Sanctuary styling */}
+          {/* How It Works Section */}
+          <Paper 
+            p="xl" 
+            radius="lg"
+            style={{
+              background: 'var(--forest-green-light)',
+              border: '1px solid var(--forest-green-primary)',
+            }}
+          >
+            <Title order={2} ta="center" mb="xl" style={{ color: 'var(--forest-green-primary)' }}>
+              How It Works
+            </Title>
+            
+            <SimpleGrid cols={{ base: 1, md: 3 }} spacing="xl">
+              <Box ta="center">
+                <ActionIcon 
+                  size={60} 
+                  variant="light" 
+                  color="forestGreen"
+                  radius="md" 
+                  mb="md"
+                  mx="auto"
+                >
+                  <IconUpload size={28} />
+                </ActionIcon>
+                <Title order={4} mb="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
+                  1. Upload Documents
+                </Title>
+                <Text size="sm" style={{ color: 'var(--sanctuary-text-secondary)' }}>
+                  Drag and drop your PDFs, DOCX files, or notes into StudyMill
+                </Text>
+              </Box>
+              
+              <Box ta="center">
+                <ActionIcon 
+                  size={60} 
+                  variant="light" 
+                  color="forestGreen"
+                  radius="md" 
+                  mb="md"
+                  mx="auto"
+                >
+                  <IconBrain size={28} />
+                </ActionIcon>
+                <Title order={4} mb="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
+                  2. AI Processing
+                </Title>
+                <Text size="sm" style={{ color: 'var(--sanctuary-text-secondary)' }}>
+                  Our AI extracts key concepts and creates searchable memories
+                </Text>
+              </Box>
+              
+              <Box ta="center">
+                <ActionIcon 
+                  size={60} 
+                  variant="light" 
+                  color="forestGreen"
+                  radius="md" 
+                  mb="md"
+                  mx="auto"
+                >
+                  <IconSearch size={28} />
+                </ActionIcon>
+                <Title order={4} mb="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
+                  3. Search & Study
+                </Title>
+                <Text size="sm" style={{ color: 'var(--sanctuary-text-secondary)' }}>
+                  Find answers instantly and chat with your knowledge base
+                </Text>
+              </Box>
+            </SimpleGrid>
+          </Paper>
+
+          {/* Final CTA */}
           <Paper 
             p="xl" 
             radius="lg"
             style={{
               background: 'var(--sanctuary-surface)',
               border: '1px solid var(--border-medium)',
-              marginTop: '3rem'
+              textAlign: 'center'
             }}
           >
-            <Group justify="space-between" align="center">
-              <Box>
-                <Title 
-                  order={3} 
-                  mb="xs"
-                  style={{ color: 'var(--sanctuary-text-primary)' }}
-                >
-                  Crafting the Foundation
-                </Title>
-                <Text 
-                  style={{ 
-                    color: 'var(--sanctuary-text-secondary)',
-                    maxWidth: '28rem'
-                  }}
-                >
-                  Currently building with Next.js 14, Mantine UI, and Cloudflare Workers 
-                  to create a fast, reliable, and sophisticated academic platform.
-                </Text>
-              </Box>
-              <Badge 
+            <Stack gap="lg" align="center">
+              <Title order={2} style={{ color: 'var(--sanctuary-text-primary)', maxWidth: 500 }}>
+                Ready to Transform Your Study Workflow?
+              </Title>
+              
+              <Text 
                 size="lg" 
-                variant="light" 
-                color="forestGreen"
+                className="academic-content"
                 style={{ 
-                  fontWeight: 500,
-                  padding: '0.75rem 1.25rem'
+                  color: 'var(--sanctuary-text-secondary)',
+                  maxWidth: 400 
                 }}
               >
-                In Development
-              </Badge>
-            </Group>
+                Join students who are already studying smarter with AI-powered document processing.
+              </Text>
+              
+              <Button 
+                size="xl"
+                rightSection={<IconArrowRight size={20} />}
+                onClick={handleGetStarted}
+                style={{
+                  background: 'var(--forest-green-primary)',
+                  border: 'none',
+                  height: 56,
+                  paddingLeft: 40,
+                  paddingRight: 40,
+                  fontSize: 18,
+                  fontWeight: 600,
+                  marginTop: 16
+                }}
+              >
+                {isAuthenticated ? 'Enter Your Sanctuary' : 'Begin Your Journey'}
+              </Button>
+              
+              <Text size="sm" style={{ color: 'var(--sanctuary-text-secondary)' }}>
+                Free forever • No credit card required • Built for students
+              </Text>
+            </Stack>
           </Paper>
         </Stack>
       </Container>

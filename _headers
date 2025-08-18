@@ -1,0 +1,11 @@
+# Cloudflare Pages Headers
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  
+# API Endpoints
+/api/*
+  Access-Control-Allow-Origin: https://studymill-api-production.merchantzains.workers.dev
+  Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
+  Access-Control-Allow-Headers: Content-Type, Authorization

@@ -51,7 +51,7 @@ class ApiClient {
 
   constructor() {
     // Use environment variable for API URL, fallback to localhost for development
-    this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787';
+    this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'https://studymill-api-production.merchantzains.workers.dev';
     
     // Load tokens from localStorage on initialization
     if (typeof window !== 'undefined') {
@@ -111,7 +111,7 @@ class ApiClient {
   /**
    * Make API request with automatic token refresh
    */
-  private async request<T>(
+  async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
@@ -280,6 +280,7 @@ class ApiClient {
   async healthCheck(): Promise<{ message: string; status: string; timestamp: string }> {
     return this.request('/');
   }
+
 }
 
 // Create singleton instance
@@ -298,3 +299,8 @@ class ApiErrorClass extends Error {
 }
 
 export { ApiErrorClass as ApiError };
+
+// Hook for using the API client in React components
+export function useApi() {
+  return apiClient;
+}
