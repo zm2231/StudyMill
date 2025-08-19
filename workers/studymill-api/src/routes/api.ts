@@ -293,6 +293,102 @@ documentsRoutes.get('/:id/download', async (c) => {
   });
 });
 
+// List all user documents with filtering
+documentsRoutes.get('/', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const courseId = c.req.query('courseId');
+    const types = c.req.query('types')?.split(',');
+    const tags = c.req.query('tags')?.split(',');
+    const query = c.req.query('query');
+    const limit = parseInt(c.req.query('limit') || '50');
+    const offset = parseInt(c.req.query('offset') || '0');
+
+    const dbService = new DatabaseService(c.env.DB);
+    
+    // Build WHERE conditions with proper table aliases
+    let whereConditions = ['d.user_id = ?'];
+    let params: any[] = [userId];
+    
+    if (courseId) {
+      whereConditions.push('d.course_id = ?');
+      params.push(courseId);
+    }
+    
+    if (types && types.length > 0) {
+      whereConditions.push(`d.file_type IN (${types.map(() => '?').join(',')})`)
+      params.push(...types);
+    }
+    
+    if (query) {
+      whereConditions.push('(d.filename LIKE ? OR d.processing_status LIKE ?)');
+      params.push(`%${query}%`, `%${query}%`);
+    }
+
+    const whereClause = whereConditions.join(' AND ');
+    
+    // Get documents with course information
+    const sql = `
+      SELECT 
+        d.*,
+        c.name as course_name,
+        c.description as course_description
+      FROM documents d
+      LEFT JOIN courses c ON d.course_id = c.id
+      WHERE ${whereClause}
+      ORDER BY d.created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+    
+    params.push(limit, offset);
+    
+    const result = await dbService.query(sql, params);
+    const documents = result.results || [];
+
+    // Get total count
+    const countSql = `SELECT COUNT(*) as total FROM documents d WHERE ${whereClause.replace(/, LIMIT.*$/, '')}`;
+    const countResult = await dbService.query(countSql, params.slice(0, -2));
+    const total = (countResult.results?.[0] as any)?.total || 0;
+
+    // Transform documents to match frontend expectations
+    const transformedDocuments = documents.map((doc: any) => ({
+      id: doc.id,
+      title: doc.filename.replace(/\.[^/.]+$/, ""), // Remove extension
+      type: doc.file_type,
+      fileUrl: doc.processing_status === 'ready' ? `/api/v1/documents/${doc.id}/content` : undefined,
+      course: doc.course_name ? {
+        name: doc.course_name,
+        color: '#4A7C2A', // Default color, TODO: get from course
+        code: doc.course_name // Simplified for now
+      } : undefined,
+      tags: [], // TODO: implement tags
+      updatedAt: new Date(doc.updated_at),
+      status: doc.processing_status === 'ready' ? 'ready' : 
+              doc.processing_status === 'processing' ? 'processing' : 'error',
+      size: doc.file_size,
+      syncStatus: 'synced' as const
+    }));
+
+    return c.json({
+      success: true,
+      documents: transformedDocuments,
+      pagination: {
+        total,
+        limit,
+        offset,
+        has_more: total > offset + limit
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Get documents error:', error);
+    return c.json({
+      success: false,
+      error: error.message || 'Failed to get documents'
+    }, 500);
+  }
+});
+
 // Add route to list documents for a course
 documentsRoutes.get('/course/:courseId', async (c) => {
   const courseId = c.req.param('courseId');
@@ -374,6 +470,7 @@ documentsRoutes.get('/:id/content', async (c) => {
   });
 });
 
+// ENHANCED: Document search endpoint using hybrid vector architecture
 documentsRoutes.get('/search', async (c) => {
   const userId = c.get('userId');
   const query = c.req.query('q');
@@ -384,22 +481,28 @@ documentsRoutes.get('/search', async (c) => {
     createError('Search query is required', 400, { field: 'q' });
   }
   
+  // Use the enhanced document search for structure-optimized results
   const dbService = new DatabaseService(c.env.DB);
-  const documentService = new DocumentService(dbService, c.env.BUCKET);
-  const processorService = new DocumentProcessorService(
-    dbService, 
-    documentService, 
-    c.env.BUCKET,
+  const vectorService = new VectorService(
+    c.env.AI,
     c.env.VECTORIZE,
-    c.env.PARSE_EXTRACT_API_KEY,
-    c.env.AI
+    dbService
   );
+  const searchService = new SemanticSearchService(vectorService, dbService);
   
-  const results = await processorService.searchDocuments(userId, query, courseId, limit);
+  // Perform document-optimized search
+  const results = await searchService.searchDocuments(query, {
+    topK: limit,
+    filters: courseId ? { courseId } : {},
+    includeMetadata: true,
+    userId
+  });
   
   return c.json({
     success: true,
-    results
+    query,
+    searchType: 'document_optimized',
+    ...results
   });
 });
 
@@ -580,10 +683,284 @@ chatRoutes.post('/sessions/:id/messages', async (c) => {
   }
 });
 
-// Search routes
+// ENHANCED: Search routes with unified academic workflows
 const searchRoutes = new Hono();
 
-// Semantic search endpoint
+// PHASE 3: Academic workflow routing endpoint
+searchRoutes.post('/academic', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const { 
+      query, 
+      workflow, // 'research', 'writing', 'studying', 'synthesis'
+      topK = 10,
+      filters = {}
+    } = await c.req.json();
+    
+    if (!query) {
+      createError('Search query is required', 400);
+    }
+
+    if (!workflow) {
+      createError('Academic workflow is required', 400);
+    }
+
+    // Initialize services
+    const dbService = new DatabaseService(c.env.DB);
+    const vectorService = new VectorService(
+      c.env.AI,
+      c.env.VECTORIZE,
+      dbService
+    );
+    const searchService = new SemanticSearchService(vectorService, dbService);
+
+    // Route to appropriate search based on academic workflow
+    let results;
+    switch (workflow) {
+      case 'research':
+      case 'citation':
+        // Research workflow: prioritize document vectors for citations
+        results = await searchService.searchDocuments(query, {
+          topK,
+          filters,
+          includeMetadata: true,
+          userId
+        });
+        break;
+        
+      case 'studying':
+      case 'review':
+        // Study workflow: prioritize memory vectors for personal connections
+        results = await searchService.searchMemories(query, {
+          topK,
+          filters,
+          includeMetadata: true,
+          userId
+        });
+        break;
+        
+      case 'synthesis':
+      case 'writing':
+        // Synthesis workflow: use unified search for comprehensive results
+        results = await searchService.unifiedSearch(query, {
+          topK,
+          filters,
+          includeMetadata: true,
+          userId
+        });
+        break;
+        
+      default:
+        // Default to unified search
+        results = await searchService.unifiedSearch(query, {
+          topK,
+          filters,
+          includeMetadata: true,
+          userId
+        });
+    }
+
+    // Add workflow-specific metadata to results
+    const enhancedResults = {
+      ...results,
+      workflow,
+      workflowOptimized: true,
+      recommendations: this.getWorkflowRecommendations(workflow, results.results)
+    };
+
+    return c.json({
+      success: true,
+      ...enhancedResults
+    });
+
+  } catch (error) {
+    console.error('Academic workflow search failed:', error);
+    throw error;
+  }
+});
+
+// PHASE 3: Citation-ready search endpoint
+searchRoutes.post('/citations', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const { 
+      query, 
+      topK = 10,
+      filters = {},
+      citationStyle = 'apa' // apa, mla, chicago
+    } = await c.req.json();
+    
+    if (!query) {
+      createError('Search query is required', 400);
+    }
+
+    // Initialize services
+    const dbService = new DatabaseService(c.env.DB);
+    const vectorService = new VectorService(
+      c.env.AI,
+      c.env.VECTORIZE,
+      dbService
+    );
+    const searchService = new SemanticSearchService(vectorService, dbService);
+
+    // Use document search for citation-ready results
+    const results = await searchService.searchDocuments(query, {
+      topK,
+      filters,
+      includeMetadata: true,
+      userId
+    });
+
+    // Add citation metadata to each result
+    const citationResults = {
+      ...results,
+      searchType: 'citation_ready',
+      citationStyle,
+      results: results.results.map(result => ({
+        ...result,
+        citation: this.generateCitation(result, citationStyle),
+        citationElements: this.extractCitationElements(result)
+      }))
+    };
+
+    return c.json({
+      success: true,
+      ...citationResults
+    });
+
+  } catch (error) {
+    console.error('Citation search failed:', error);
+    throw error;
+  }
+});
+
+// ENHANCED: Document search endpoint for structure-optimized vectors
+searchRoutes.post('/documents', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const { 
+      query, 
+      topK = 10,
+      filters = {}
+    } = await c.req.json();
+    
+    if (!query) {
+      createError('Search query is required', 400);
+    }
+
+    // Initialize services
+    const dbService = new DatabaseService(c.env.DB);
+    const vectorService = new VectorService(
+      c.env.AI,
+      c.env.VECTORIZE,
+      dbService
+    );
+    const searchService = new SemanticSearchService(vectorService, dbService);
+
+    // Perform document-optimized search
+    const results = await searchService.searchDocuments(query, {
+      topK,
+      filters,
+      includeMetadata: true,
+      userId
+    });
+
+    return c.json({
+      success: true,
+      ...results
+    });
+
+  } catch (error) {
+    console.error('Document search failed:', error);
+    throw error;
+  }
+});
+
+// ENHANCED: Memory search endpoint for context-optimized vectors
+searchRoutes.post('/memories', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const { 
+      query, 
+      topK = 10,
+      filters = {}
+    } = await c.req.json();
+    
+    if (!query) {
+      createError('Search query is required', 400);
+    }
+
+    // Initialize services
+    const dbService = new DatabaseService(c.env.DB);
+    const vectorService = new VectorService(
+      c.env.AI,
+      c.env.VECTORIZE,
+      dbService
+    );
+    const searchService = new SemanticSearchService(vectorService, dbService);
+
+    // Perform memory-optimized search
+    const results = await searchService.searchMemories(query, {
+      topK,
+      filters,
+      includeMetadata: true,
+      userId
+    });
+
+    return c.json({
+      success: true,
+      ...results
+    });
+
+  } catch (error) {
+    console.error('Memory search failed:', error);
+    throw error;
+  }
+});
+
+// ENHANCED: Unified search endpoint with intelligent ranking
+searchRoutes.post('/unified', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const { 
+      query, 
+      topK = 10,
+      filters = {}
+    } = await c.req.json();
+    
+    if (!query) {
+      createError('Search query is required', 400);
+    }
+
+    // Initialize services
+    const dbService = new DatabaseService(c.env.DB);
+    const vectorService = new VectorService(
+      c.env.AI,
+      c.env.VECTORIZE,
+      dbService
+    );
+    const searchService = new SemanticSearchService(vectorService, dbService);
+
+    // Perform unified search with intelligent ranking
+    const results = await searchService.unifiedSearch(query, {
+      topK,
+      filters,
+      includeMetadata: true,
+      userId
+    });
+
+    return c.json({
+      success: true,
+      ...results
+    });
+
+  } catch (error) {
+    console.error('Unified search failed:', error);
+    throw error;
+  }
+});
+
+// LEGACY: Semantic search endpoint (deprecated but maintained for compatibility)
 searchRoutes.post('/semantic', async (c) => {
   try {
     const userId = c.get('userId');
@@ -607,10 +984,9 @@ searchRoutes.post('/semantic', async (c) => {
     );
     const searchService = new SemanticSearchService(vectorService, dbService);
 
-    // Perform search
-    const results = await searchService.search(query, {
+    // Default to unified search for best results
+    const results = await searchService.unifiedSearch(query, {
       topK,
-      searchType,
       filters,
       includeMetadata: true,
       userId
@@ -627,12 +1003,13 @@ searchRoutes.post('/semantic', async (c) => {
   }
 });
 
-// Quick search endpoint (for autocomplete/instant search)
+// ENHANCED: Quick search endpoint (for autocomplete/instant search)
 searchRoutes.get('/quick', async (c) => {
   try {
     const userId = c.get('userId');
     const query = c.req.query('q');
     const courseId = c.req.query('courseId');
+    const searchType = c.req.query('type') || 'unified'; // documents, memories, or unified
     const limit = parseInt(c.req.query('limit') || '5');
 
     if (!query || query.length < 2) {
@@ -641,12 +1018,12 @@ searchRoutes.get('/quick', async (c) => {
         results: [],
         totalResults: 0,
         searchTime: 0,
-        searchType: 'quick',
+        searchType: 'quick_' + searchType,
         query: query || ''
       });
     }
 
-    // Initialize services for keyword-only quick search
+    // Initialize services
     const dbService = new DatabaseService(c.env.DB);
     const vectorService = new VectorService(
       c.env.AI,
@@ -655,14 +1032,35 @@ searchRoutes.get('/quick', async (c) => {
     );
     const searchService = new SemanticSearchService(vectorService, dbService);
 
-    // Perform keyword search only for speed
-    const results = await searchService.search(query, {
-      topK: limit,
-      searchType: 'keyword',
-      filters: courseId ? { courseId } : {},
-      includeMetadata: false,
-      userId
-    });
+    // Choose search method based on type
+    let results;
+    const filters = courseId ? { courseId } : {};
+    
+    switch (searchType) {
+      case 'documents':
+        results = await searchService.searchDocuments(query, {
+          topK: limit,
+          filters,
+          includeMetadata: false,
+          userId
+        });
+        break;
+      case 'memories':
+        results = await searchService.searchMemories(query, {
+          topK: limit,
+          filters,
+          includeMetadata: false,
+          userId
+        });
+        break;
+      default:
+        results = await searchService.unifiedSearch(query, {
+          topK: limit,
+          filters,
+          includeMetadata: false,
+          userId
+        });
+    }
 
     return c.json({
       success: true,
@@ -709,6 +1107,66 @@ searchRoutes.get('/suggestions', async (c) => {
     throw error;
   }
 });
+
+// PHASE 3: Helper functions for academic workflows
+function getWorkflowRecommendations(workflow: string, results: any[]): string[] {
+  const recommendations = [];
+  
+  switch (workflow) {
+    case 'research':
+    case 'citation':
+      recommendations.push('Results optimized for citations and references');
+      if (results.some(r => r.pageNumber)) {
+        recommendations.push('Page numbers available for accurate citations');
+      }
+      recommendations.push('Consider using /search/citations endpoint for formatted citations');
+      break;
+      
+    case 'studying':
+    case 'review':
+      recommendations.push('Results prioritize your personal connections and insights');
+      recommendations.push('Related memories may contain additional context');
+      if (results.some(r => r.metadata?.relationships)) {
+        recommendations.push('Relationship data available for deeper understanding');
+      }
+      break;
+      
+    case 'synthesis':
+    case 'writing':
+      recommendations.push('Results combine document structure with personal insights');
+      recommendations.push('Use memory synthesis endpoint for AI-powered integration');
+      break;
+  }
+  
+  return recommendations;
+}
+
+function generateCitation(result: any, style: string): string {
+  // Basic citation generation - could be enhanced with proper citation library
+  const title = result.metadata?.document_title || result.documentId;
+  const page = result.pageNumber ? `, p. ${result.pageNumber}` : '';
+  
+  switch (style) {
+    case 'apa':
+      return `Source: ${title}${page}`;
+    case 'mla':
+      return `"${result.text.substring(0, 50)}..." (${title}${page})`;
+    case 'chicago':
+      return `${title}${page}.`;
+    default:
+      return `${title}${page}`;
+  }
+}
+
+function extractCitationElements(result: any): any {
+  return {
+    title: result.metadata?.document_title || result.documentId,
+    page: result.pageNumber,
+    chunk: result.chunkIndex,
+    documentType: result.documentType,
+    excerpt: result.text.substring(0, 200) + (result.text.length > 200 ? '...' : '')
+  };
+}
 
 // Search analytics endpoint
 searchRoutes.get('/analytics', async (c) => {
@@ -869,8 +1327,9 @@ audioRoutes.post('/upload', async (c) => {
       userId
     );
 
-    // Create proper memories in the memory system
+    // ENHANCED: Create proper memories in the hybrid memory system
     const dbService = new DatabaseService(c.env.DB);
+    // Use EnhancedMemoryService for user-facing audio memories (context-optimized)
     const memoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
     
     const memories = await AudioProcessor.createMemoriesWithMemoryService(

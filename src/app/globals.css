@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Academic Sanctuary Color Variables */
+/* Phase 1 Design System - Light Mode */
 :root {
   /* Primary Academic Sanctuary Palette */
   --sanctuary-background: #F9F7F4; /* Warm off-white, aged paper */
@@ -23,9 +23,71 @@
   --border-medium: #D9CBA0;
   --divider: #C2B280;
   
+  /* Phase 1 Layout Variables */
+  --sidebar-width: 280px;
+  --sidebar-collapsed-width: 64px;
+  --context-panel-width: 384px;
+  --dashboard-breakpoint: 1200px;
+  
+  /* Phase 1 Spacing System (8pt grid) */
+  --space-xs: 0.25rem; /* 4px */
+  --space-sm: 0.5rem; /* 8px */
+  --space-md: 1rem; /* 16px */
+  --space-lg: 1.5rem; /* 24px */
+  --space-xl: 2rem; /* 32px */
+  --space-2xl: 3rem; /* 48px */
+  --space-3xl: 4rem; /* 64px */
+  
+  /* Phase 1 Animation Timings */
+  --transition-fast: 120ms;
+  --transition-medium: 220ms;
+  --transition-slow: 320ms;
+  
+  /* Phase 1 Border Radius */
+  --radius-sm: 0.25rem; /* 4px */
+  --radius-md: 0.5rem; /* 8px */
+  --radius-lg: 0.75rem; /* 12px */
+  --radius-xl: 1rem; /* 16px */
+  
+  /* Phase 1 Shadows */
+  --shadow-sm: 0 1px 2px rgba(44, 42, 41, 0.05);
+  --shadow-md: 0 4px 6px rgba(44, 42, 41, 0.07);
+  --shadow-lg: 0 10px 15px rgba(44, 42, 41, 0.1);
+  --shadow-xl: 0 20px 25px rgba(44, 42, 41, 0.1);
+  
   /* Typography */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+/* Phase 1 Design System - Dark Mode */
+[data-mantine-color-scheme="dark"] {
+  /* Dark Academic Sanctuary Palette */
+  --sanctuary-background: #12110F; /* Dark background */
+  --sanctuary-surface: #191814; /* Dark surface */
+  --sanctuary-card: #1F1E1A; /* Dark card backgrounds */
+  --sanctuary-text-primary: #ECE9E2; /* Light text on dark */
+  --sanctuary-text-secondary: #B9B3A7; /* Secondary on dark */
+  
+  /* Brand Colors (adjusted for dark) */
+  --forest-green-primary: #4A7C2A; /* Brand stays consistent */
+  --forest-green-light: #6FAE67; /* Adjusted accent */
+  
+  /* Semantic Colors (muted for dark) */
+  --warm-brown: #B8825A; /* Lighter brown for visibility */
+  --warm-sand: #9F835F; /* Muted warning */
+  --muted-terracotta: #AD6C56; /* Muted error */
+  
+  /* Borders & Dividers */
+  --border-light: #2C2A24; /* Dark borders */
+  --border-medium: #4C473B; /* Dark dividers */
+  --divider: #4C473B;
+  
+  /* Dark Mode Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.4);
 }
 
 @theme inline {

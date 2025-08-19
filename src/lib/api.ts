@@ -626,6 +626,104 @@ class ApiClient {
     });
   }
 
+  // Document management endpoints
+  async getDocuments(options?: {
+    courseId?: string;
+    types?: string[];
+    tags?: string[];
+    query?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    success: boolean;
+    documents: Array<{
+      id: string;
+      title: string;
+      type: string;
+      fileUrl?: string;
+      course?: {
+        name: string;
+        color: string;
+        code: string;
+      };
+      tags: string[];
+      updatedAt: Date;
+      status: 'ready' | 'processing' | 'error';
+      size: number;
+      syncStatus: 'synced' | 'syncing' | 'error' | 'offline';
+      canEdit?: boolean;
+    }>;
+    pagination: {
+      total: number;
+      limit: number;
+      offset: number;
+      has_more: boolean;
+    };
+  }> {
+    const searchParams = new URLSearchParams();
+    if (options?.courseId) searchParams.set('courseId', options.courseId);
+    if (options?.types) searchParams.set('types', options.types.join(','));
+    if (options?.tags) searchParams.set('tags', options.tags.join(','));
+    if (options?.query) searchParams.set('query', options.query);
+    if (options?.limit) searchParams.set('limit', options.limit.toString());
+    if (options?.offset) searchParams.set('offset', options.offset.toString());
+    
+    const query = searchParams.toString();
+    return this.request(`/api/v1/documents${query ? `?${query}` : ''}`);
+  }
+
+  async getDocument(id: string): Promise<{
+    success: boolean;
+    document: {
+      id: string;
+      title: string;
+      type: string;
+      fileUrl?: string;
+      content?: string;
+      course?: {
+        name: string;
+        color: string;
+        code: string;
+      };
+      tags: string[];
+      updatedAt: Date;
+      status: 'ready' | 'processing' | 'error';
+      size: number;
+      syncStatus: 'synced' | 'syncing' | 'error' | 'offline';
+      canEdit?: boolean;
+    };
+  }> {
+    return this.request(`/api/v1/documents/${id}`);
+  }
+
+  async uploadDocument(formData: FormData): Promise<{
+    success: boolean;
+    documentId?: string;
+    jobId?: string;
+    processingType: 'direct' | 'async';
+    estimatedTime?: number;
+    error?: string;
+  }> {
+    return this.request('/api/v1/documents/process', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async getProcessingStatus(jobId: string): Promise<{
+    success: boolean;
+    job?: {
+      id: string;
+      status: string;
+      progress: number;
+      result?: any;
+      error?: string;
+    };
+    error?: string;
+  }> {
+    return this.request(`/api/v1/documents/jobs/${jobId}/status`);
+  }
+
   // Health check
   async healthCheck(): Promise<{ message: string; status: string; timestamp: string }> {
     return this.request('/');

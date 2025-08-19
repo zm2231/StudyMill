@@ -312,42 +312,41 @@ export function AudioUpload({ opened, onClose, preselectedCourseId }: AudioUploa
   };
 
   return (
-    <Modal 
-      opened={opened} 
+    <Modal
+      opened={opened}
       onClose={handleClose}
-      title="Upload Audio Files"
+      title="Upload Audio"
       size="lg"
-      centered
+      radius="md"
+      styles={{
+        title: { fontSize: '1.25rem', fontWeight: 600 }
+      }}
     >
       <Stack gap="lg">
-        {/* Upload Configuration */}
-        <Box>
-          <Title order={4} mb="sm">Audio Settings</Title>
+        {/* Course and Tags Selection */}
+        <Stack gap="md">
+          <Select
+            label="Course"
+            placeholder="Select a course"
+            data={courseOptions}
+            value={selectedCourse}
+            onChange={setSelectedCourse}
+            searchable
+            clearable
+          />
           
-          <Stack gap="md">
-            <Select
-              label="Course"
-              placeholder="Select a course (optional)"
-              data={courseOptions}
-              value={selectedCourse}
-              onChange={setSelectedCourse}
-              searchable
-              clearable
-            />
-            
-            <TextInput
-              label="Additional Tags"
-              placeholder="lecture, discussion, lab-session (comma separated)"
-              value={customTags}
-              onChange={(e) => setCustomTags(e.target.value)}
-              description="Add custom tags to help organize your audio content"
-            />
-          </Stack>
-        </Box>
+          <TextInput
+            label="Tags (Optional)"
+            placeholder="lecture, discussion, lab-session"
+            value={customTags}
+            onChange={(e) => setCustomTags(e.target.value)}
+            description="Add tags to organize your audio content"
+          />
+        </Stack>
 
         {/* Recording Section */}
         <Box>
-          <Title order={4} mb="sm">Record Audio</Title>
+          <Text fw={500} mb="md">Record Audio</Text>
           
           <Center>
             <Stack align="center" gap="md">
@@ -355,8 +354,17 @@ export function AudioUpload({ opened, onClose, preselectedCourseId }: AudioUploa
                 size={80}
                 radius="xl"
                 variant={isRecording ? "filled" : "outline"}
-                color={isRecording ? "red" : "blue"}
+                color={isRecording ? "red" : "forestGreen"}
                 onClick={isRecording ? stopRecording : startRecording}
+                styles={{
+                  root: {
+                    border: isRecording ? undefined : '2px solid var(--mantine-color-forest-green-4)',
+                    '&:hover': {
+                      borderColor: isRecording ? undefined : 'var(--mantine-color-forest-green-5)',
+                      backgroundColor: isRecording ? undefined : 'var(--mantine-color-forest-green-0)'
+                    }
+                  }
+                }}
               >
                 {isRecording ? (
                   <IconPlayerStop size={40} />
@@ -380,25 +388,26 @@ export function AudioUpload({ opened, onClose, preselectedCourseId }: AudioUploa
 
         {/* File Upload Area */}
         <Box>
-          <Title order={4} mb="sm">Or Upload Audio Files</Title>
+          <Text fw={500} mb="md">Or Upload Audio Files</Text>
           
           <Box
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             onClick={() => document.getElementById('audio-file-input')?.click()}
             style={{
-              border: '2px dashed #e2e8f0',
+              border: '2px dashed var(--mantine-color-forest-green-4)',
               borderRadius: 8,
               padding: '2rem',
               textAlign: 'center',
               cursor: 'pointer',
-              backgroundColor: '#ffffff',
-              transition: 'all 0.2s ease'
+              backgroundColor: 'var(--mantine-color-forest-green-0)',
+              transition: 'all 0.2s ease',
+              minHeight: 120
             }}
             sx={{
               '&:hover': {
-                borderColor: '#3b82f6',
-                backgroundColor: '#f8fafc'
+                borderColor: 'var(--mantine-color-forest-green-5)',
+                backgroundColor: 'var(--mantine-color-forest-green-1)'
               }
             }}
           >
@@ -411,41 +420,36 @@ export function AudioUpload({ opened, onClose, preselectedCourseId }: AudioUploa
               style={{ display: 'none' }}
             />
             
-            <IconUpload size={48} color="#64748b" style={{ marginBottom: '1rem' }} />
+            <IconUpload size={48} style={{ color: 'var(--mantine-color-forest-green-6)', marginBottom: '1rem' }} />
             
-            <Text size="lg" mb="xs" style={{ color: '#1e293b' }}>
-              Drag & drop audio files here
+            <Text size="lg" fw={500} mb="xs">
+              Drop audio files here or click to browse
             </Text>
             
-            <Text size="sm" c="dimmed" mb="md">
-              or click to browse files
-            </Text>
-            
-            <Text size="xs" c="dimmed">
+            <Text size="sm" c="dimmed">
               Supports MP3, WAV, M4A, FLAC, OGG, WebM files up to 100MB
             </Text>
           </Box>
         </Box>
 
-        {/* File List */}
+        {/* File Queue */}
         {files.length > 0 && (
           <Box>
-            <Title order={4} mb="sm">Processing Audio</Title>
+            <Text fw={500} mb="md">Upload Queue ({files.length} files)</Text>
             
             <Stack gap="sm">
               {files.map((file, index) => (
                 <Box 
                   key={index}
                   p="md" 
+                  withBorder
                   style={{ 
-                    border: '1px solid #e2e8f0', 
-                    borderRadius: 8,
-                    backgroundColor: '#ffffff'
+                    borderRadius: 8
                   }}
                 >
                   <Group justify="space-between" align="flex-start" mb="sm">
                     <Group gap="sm">
-                      <IconMusic size={20} color="#64748b" />
+                      <IconMusic size={20} style={{ color: 'var(--mantine-color-gray-6)' }} />
                       <Box>
                         <Text size="sm" fw={500}>{file.name}</Text>
                         <Text size="xs" c="dimmed">
@@ -455,21 +459,21 @@ export function AudioUpload({ opened, onClose, preselectedCourseId }: AudioUploa
                     </Group>
                     
                     {file.status !== 'uploading' && file.status !== 'processing' && (
-                      <Button 
-                        size="xs" 
-                        variant="subtle" 
-                        c="red" 
+                      <ActionIcon
+                        variant="subtle"
+                        color="red"
+                        size="sm"
                         onClick={() => removeFile(file.name)}
                       >
                         <IconX size={14} />
-                      </Button>
+                      </ActionIcon>
                     )}
                   </Group>
                   
                   {(file.status === 'uploading' || file.status === 'processing') && (
                     <Progress 
                       value={file.progress} 
-                      color={getStatusColor(file.status)}
+                      color="forest-green"
                       size="sm"
                       animated={file.status === 'processing'}
                     />
@@ -496,16 +500,36 @@ export function AudioUpload({ opened, onClose, preselectedCourseId }: AudioUploa
         )}
 
         {/* Actions */}
-        <Group justify="flex-end">
-          <Button variant="outline" onClick={handleClose}>
-            {files.some(f => f.status === 'uploading' || f.status === 'processing') || isRecording ? 'Cancel' : 'Close'}
-          </Button>
-          
-          {files.length > 0 && files.every(f => f.status === 'completed') && (
-            <Button onClick={handleClose}>
-              View Library
+        <Group justify="space-between">
+          <Group>
+            {files.length > 0 && (
+              <Button
+                variant="light"
+                onClick={() => setFiles([])}
+                disabled={files.some(f => f.status === 'uploading' || f.status === 'processing') || isRecording}
+              >
+                Clear Queue
+              </Button>
+            )}
+          </Group>
+
+          <Group>
+            <Button
+              variant="light"
+              onClick={handleClose}
+            >
+              {files.some(f => f.status === 'uploading' || f.status === 'processing') || isRecording ? 'Cancel' : 'Close'}
             </Button>
-          )}
+            
+            {files.length > 0 && files.every(f => f.status === 'completed') && (
+              <Button
+                onClick={handleClose}
+                color="forest-green"
+              >
+                Done
+              </Button>
+            )}
+          </Group>
         </Group>
       </Stack>
     </Modal>

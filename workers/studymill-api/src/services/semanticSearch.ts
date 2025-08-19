@@ -64,7 +64,156 @@ export class SemanticSearchService {
   ) {}
 
   /**
-   * Main search interface - performs semantic, keyword, or hybrid search
+   * ENHANCED: Search documents using structure-optimized vectors
+   * Optimized for citations, page references, and editing workflows
+   */
+  async searchDocuments(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
+    const startTime = Date.now();
+    const {
+      topK = SemanticSearchService.DEFAULT_TOP_K,
+      searchType = 'hybrid',
+      filters = {},
+      includeMetadata = true,
+      userId
+    } = options;
+
+    if (!userId) {
+      throw createError('User ID is required for search operations', 401);
+    }
+
+    if (!query || query.trim().length === 0) {
+      throw createError('Search query is required', 400);
+    }
+
+    try {
+      let results: SearchResult[] = [];
+
+      // Always use hybrid search for documents to preserve structure
+      results = await this.performDocumentHybridSearch(query, topK, filters, includeMetadata, userId);
+
+      const searchTime = Date.now() - startTime;
+
+      // Log search analytics with document-specific type
+      await this.logSearchAnalytics(query, 'document_' + searchType, filters, results.length, searchTime, userId);
+
+      return {
+        results,
+        totalResults: results.length,
+        searchTime,
+        searchType: 'document_hybrid',
+        query,
+        filters
+      };
+
+    } catch (error) {
+      console.error('Document search failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * ENHANCED: Search memories using context-optimized vectors
+   * Optimized for personal connections, synthesis, and relationships
+   */
+  async searchMemories(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
+    const startTime = Date.now();
+    const {
+      topK = SemanticSearchService.DEFAULT_TOP_K,
+      filters = {},
+      includeMetadata = true,
+      userId
+    } = options;
+
+    if (!userId) {
+      throw createError('User ID is required for search operations', 401);
+    }
+
+    if (!query || query.trim().length === 0) {
+      throw createError('Search query is required', 400);
+    }
+
+    try {
+      // Use semantic search for memories to emphasize relationships
+      const results = await this.performMemorySemanticSearch(query, topK, filters, includeMetadata, userId);
+
+      const searchTime = Date.now() - startTime;
+
+      // Log search analytics with memory-specific type
+      await this.logSearchAnalytics(query, 'memory_semantic', filters, results.length, searchTime, userId);
+
+      return {
+        results,
+        totalResults: results.length,
+        searchTime,
+        searchType: 'memory_semantic',
+        query,
+        filters
+      };
+
+    } catch (error) {
+      console.error('Memory search failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * ENHANCED: Unified search with intelligent ranking and deduplication
+   * Combines document and memory vectors with smart result merging
+   */
+  async unifiedSearch(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
+    const startTime = Date.now();
+    const {
+      topK = SemanticSearchService.DEFAULT_TOP_K,
+      filters = {},
+      includeMetadata = true,
+      userId
+    } = options;
+
+    if (!userId) {
+      throw createError('User ID is required for search operations', 401);
+    }
+
+    if (!query || query.trim().length === 0) {
+      throw createError('Search query is required', 400);
+    }
+
+    try {
+      // Perform both document and memory searches in parallel
+      const [documentResults, memoryResults] = await Promise.all([
+        this.searchDocuments(query, { ...options, topK: topK * 2 }), // Get more results for better fusion
+        this.searchMemories(query, { ...options, topK: topK * 2 })
+      ]);
+
+      // Apply intelligent ranking and deduplication
+      const fusedResults = this.applyIntelligentRanking(
+        documentResults.results,
+        memoryResults.results,
+        topK
+      );
+
+      const searchTime = Date.now() - startTime;
+
+      // Log search analytics with unified type
+      await this.logSearchAnalytics(query, 'unified_intelligent', filters, fusedResults.length, searchTime, userId);
+
+      return {
+        results: fusedResults,
+        totalResults: fusedResults.length,
+        searchTime,
+        searchType: 'unified_intelligent',
+        query,
+        filters
+      };
+
+    } catch (error) {
+      console.error('Unified search failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * LEGACY: Main search interface - performs semantic, keyword, or hybrid search
+   * @deprecated Use searchDocuments, searchMemories, or unifiedSearch instead
    */
   async search(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
     const startTime = Date.now();
@@ -226,7 +375,150 @@ export class SemanticSearchService {
   }
 
   /**
-   * Perform hybrid search combining semantic and keyword search with RRF
+   * ENHANCED: Perform document-optimized hybrid search
+   * Emphasizes structure preservation for citations and page references
+   */
+  private async performDocumentHybridSearch(
+    query: string,
+    topK: number,
+    filters: SearchFilters,
+    includeMetadata: boolean,
+    userId: string
+  ): Promise<SearchResult[]> {
+    // Build document-specific vector filter
+    const documentVectorFilter = this.buildDocumentVectorFilter(filters, userId);
+
+    // Perform both searches in parallel with document-specific tuning
+    const [semanticResults, keywordResults] = await Promise.all([
+      this.performDocumentSemanticSearch(query, topK * 2, documentVectorFilter, includeMetadata),
+      this.performKeywordSearch(query, topK * 2, filters, userId)
+    ]);
+
+    // Apply RRF with document-structure weighting
+    const fusedResults = this.applyDocumentRRF(semanticResults, keywordResults);
+
+    // Return top K results
+    return fusedResults.slice(0, topK);
+  }
+
+  /**
+   * ENHANCED: Perform memory-optimized semantic search
+   * Emphasizes relationship and context discovery
+   */
+  private async performMemorySemanticSearch(
+    query: string,
+    topK: number,
+    filters: SearchFilters,
+    includeMetadata: boolean,
+    userId: string
+  ): Promise<SearchResult[]> {
+    // Build memory-specific vector filter
+    const memoryVectorFilter = this.buildMemoryVectorFilter(filters, userId);
+
+    // Generate query embedding
+    const queryVector = await this.vectorService.generateQueryEmbedding(query);
+
+    // Search memory vectors with relationship emphasis
+    const vectorResults = await this.vectorService.searchVectors(queryVector, {
+      topK,
+      filter: memoryVectorFilter,
+      includeMetadata
+    });
+
+    if (vectorResults.length === 0) {
+      return [];
+    }
+
+    // Get memory metadata from database
+    const memoryIds = vectorResults.map(r => r.metadata?.memory_id || r.id);
+    const memories = await this.getMemoriesByIds(memoryIds, userId);
+
+    // Combine vector results with memory data, emphasizing relationships
+    return vectorResults.map(vectorResult => {
+      const memory = memories.find(m => m.id === (vectorResult.metadata?.memory_id || vectorResult.id));
+      if (!memory) {
+        console.warn(`Memory not found: ${vectorResult.id}`);
+        return null;
+      }
+
+      return {
+        id: vectorResult.id,
+        score: vectorResult.score,
+        text: memory.content,
+        documentId: memory.source_id || '',
+        courseId: memory.container_tags?.[0] || '',
+        documentType: 'memory',
+        pageNumber: memory.metadata?.pageNumber,
+        chunkIndex: memory.metadata?.chunkIndex || 0,
+        metadata: {
+          ...vectorResult.metadata,
+          memoryType: memory.source_type,
+          containerTags: memory.container_tags,
+          relationships: memory.metadata?.relationships || []
+        },
+        searchType: 'semantic' as const
+      };
+    }).filter(Boolean) as SearchResult[];
+  }
+
+  /**
+   * ENHANCED: Perform document-specific semantic search
+   * Optimized for document structure and citations
+   */
+  private async performDocumentSemanticSearch(
+    query: string,
+    topK: number,
+    vectorFilter: Record<string, any>,
+    includeMetadata: boolean
+  ): Promise<SearchResult[]> {
+    // Generate query embedding
+    const queryVector = await this.vectorService.generateQueryEmbedding(query);
+
+    // Search document vectors
+    const vectorResults = await this.vectorService.searchVectors(queryVector, {
+      topK,
+      filter: vectorFilter,
+      includeMetadata
+    });
+
+    if (vectorResults.length === 0) {
+      return [];
+    }
+
+    // Get chunk metadata from database with document focus
+    const chunkIds = vectorResults.map(r => r.id);
+    const chunks = await this.getDocumentChunksByIds(chunkIds);
+
+    // Combine vector results with chunk data, preserving document structure
+    return vectorResults.map(vectorResult => {
+      const chunk = chunks.find(c => c.id === vectorResult.id);
+      if (!chunk) {
+        console.warn(`Document chunk not found: ${vectorResult.id}`);
+        return null;
+      }
+
+      return {
+        id: vectorResult.id,
+        score: vectorResult.score,
+        text: chunk.chunk_text,
+        documentId: chunk.document_id,
+        courseId: chunk.course_id,
+        documentType: chunk.document_type,
+        pageNumber: chunk.page_number,
+        chunkIndex: chunk.chunk_index,
+        metadata: {
+          ...vectorResult.metadata,
+          structurePreserved: true,
+          citationReady: true
+        },
+        searchType: 'semantic' as const
+      };
+    }).filter(Boolean) as SearchResult[];
+  }
+
+  /**
+   * LEGACY: Perform hybrid search combining semantic and keyword search with RRF
+   * @deprecated Use performDocumentHybridSearch or performMemorySemanticSearch instead
    */
   private async performHybridSearch(
     query: string,
@@ -249,7 +541,105 @@ export class SemanticSearchService {
   }
 
   /**
-   * Apply Reciprocal Rank Fusion algorithm to combine search results
+   * ENHANCED: Apply intelligent ranking for unified search results
+   * Combines document and memory vectors with deduplication and smart weighting
+   */
+  private applyIntelligentRanking(
+    documentResults: SearchResult[],
+    memoryResults: SearchResult[],
+    topK: number
+  ): SearchResult[] {
+    const resultMap = new Map<string, SearchResult>();
+    const contentHashes = new Set<string>();
+
+    // Process document results first (higher priority for structure)
+    documentResults.forEach((result, index) => {
+      const contentHash = this.generateContentHash(result.text);
+      if (!contentHashes.has(contentHash)) {
+        contentHashes.add(contentHash);
+        resultMap.set(result.id, {
+          ...result,
+          score: result.score * 1.2, // Boost document results for structure preservation
+          searchType: 'unified_document' as const,
+          metadata: {
+            ...result.metadata,
+            resultType: 'document',
+            structurePriority: true
+          }
+        });
+      }
+    });
+
+    // Process memory results with relationship weighting
+    memoryResults.forEach((result, index) => {
+      const contentHash = this.generateContentHash(result.text);
+      if (!contentHashes.has(contentHash) && !resultMap.has(result.id)) {
+        contentHashes.add(contentHash);
+        const relationshipBoost = result.metadata?.relationships?.length > 0 ? 1.1 : 1.0;
+        resultMap.set(result.id, {
+          ...result,
+          score: result.score * relationshipBoost,
+          searchType: 'unified_memory' as const,
+          metadata: {
+            ...result.metadata,
+            resultType: 'memory',
+            relationshipEnhanced: relationshipBoost > 1.0
+          }
+        });
+      }
+    });
+
+    // Sort by intelligent score and return top K
+    return Array.from(resultMap.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
+  }
+
+  /**
+   * ENHANCED: Apply document-optimized RRF with structure weighting
+   */
+  private applyDocumentRRF(semanticResults: SearchResult[], keywordResults: SearchResult[]): SearchResult[] {
+    const scoreMap = new Map<string, { result: SearchResult; score: number }>();
+
+    // Process semantic results with document structure weighting
+    semanticResults.forEach((result, index) => {
+      const rrfScore = 1.0 / (SemanticSearchService.RRF_CONSTANT + index + 1);
+      const structureBoost = result.pageNumber ? 1.1 : 1.0; // Boost results with page numbers
+      scoreMap.set(result.id, {
+        result: { ...result, searchType: 'document_hybrid' as const },
+        score: rrfScore * structureBoost
+      });
+    });
+
+    // Process keyword results with exact match weighting
+    keywordResults.forEach((result, index) => {
+      const rrfScore = 1.0 / (SemanticSearchService.RRF_CONSTANT + index + 1);
+      const existing = scoreMap.get(result.id);
+      
+      if (existing) {
+        // Combine scores for documents that appear in both result sets
+        existing.score += rrfScore;
+      } else {
+        // Add keyword-only results
+        scoreMap.set(result.id, {
+          result: { ...result, searchType: 'document_hybrid' as const },
+          score: rrfScore
+        });
+      }
+    });
+
+    // Sort by combined RRF score and return results
+    return Array.from(scoreMap.values())
+      .sort((a, b) => b.score - a.score)
+      .map(item => ({
+        ...item.result,
+        score: item.score
+      }));
+  }
+
+  /**
+   * LEGACY: Apply Reciprocal Rank Fusion algorithm to combine search results
+   * @deprecated Use applyIntelligentRanking or applyDocumentRRF instead
    */
   private applyRRF(semanticResults: SearchResult[], keywordResults: SearchResult[]): SearchResult[] {
     const scoreMap = new Map<string, { result: SearchResult; score: number }>();
@@ -290,7 +680,52 @@ export class SemanticSearchService {
   }
 
   /**
-   * Build vector filter for Vectorize queries with mandatory user partitioning
+   * ENHANCED: Build document-specific vector filter for structure-optimized search
+   */
+  private buildDocumentVectorFilter(filters: SearchFilters, userId: string): Record<string, any> {
+    const filter: Record<string, any> = {
+      user_id: { "$eq": userId }, // CRITICAL: Always filter by user for data isolation
+      source_type: { "$eq": "document" } // Only search document vectors
+    };
+
+    if (filters.courseId) {
+      filter.course_id = { "$eq": filters.courseId };
+    }
+
+    if (filters.documentType) {
+      filter.document_type = { "$eq": filters.documentType };
+    }
+
+    if (filters.documentId) {
+      filter.document_id = { "$eq": filters.documentId };
+    }
+
+    return filter;
+  }
+
+  /**
+   * ENHANCED: Build memory-specific vector filter for context-optimized search
+   */
+  private buildMemoryVectorFilter(filters: SearchFilters, userId: string): Record<string, any> {
+    const filter: Record<string, any> = {
+      user_id: { "$eq": userId }, // CRITICAL: Always filter by user for data isolation
+      source_type: { "$eq": "memory" } // Only search memory vectors
+    };
+
+    if (filters.courseId) {
+      filter.container_tags = { "$eq": filters.courseId }; // Memories use container_tags for course association
+    }
+
+    if (filters.documentType) {
+      filter.memory_source_type = { "$eq": filters.documentType };
+    }
+
+    return filter;
+  }
+
+  /**
+   * LEGACY: Build vector filter for Vectorize queries with mandatory user partitioning
+   * @deprecated Use buildDocumentVectorFilter or buildMemoryVectorFilter instead
    */
   private buildVectorFilter(filters: SearchFilters, userId: string): Record<string, any> {
     const filter: Record<string, any> = {
@@ -377,7 +812,87 @@ export class SemanticSearchService {
   }
 
   /**
-   * Get chunk data by IDs with user-based filtering
+   * ENHANCED: Get document chunks by IDs with structure preservation
+   */
+  private async getDocumentChunksByIds(ids: string[]): Promise<any[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const placeholders = ids.map(() => '?').join(',');
+    const sql = `
+      SELECT 
+        e.id,
+        e.chunk_text,
+        e.document_id,
+        e.course_id,
+        e.document_type,
+        e.page_number,
+        e.chunk_index,
+        d.file_name,
+        d.title as document_title
+      FROM document_embeddings e
+      LEFT JOIN documents d ON e.document_id = d.id
+      WHERE e.id IN (${placeholders})
+    `;
+
+    const result = await this.dbService.db.prepare(sql).bind(...ids).all();
+    return result.results as any[];
+  }
+
+  /**
+   * ENHANCED: Get memories by IDs with relationship data
+   */
+  private async getMemoriesByIds(ids: string[], userId: string): Promise<any[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const placeholders = ids.map(() => '?').join(',');
+    const sql = `
+      SELECT 
+        m.id,
+        m.content,
+        m.source_type,
+        m.source_id,
+        m.container_tags,
+        m.metadata,
+        m.created_at,
+        m.updated_at
+      FROM memories m
+      WHERE m.id IN (${placeholders})
+        AND m.user_id = ?
+        AND m.deleted_at IS NULL
+    `;
+
+    const result = await this.dbService.db.prepare(sql).bind(...ids, userId).all();
+    const memories = result.results as any[];
+
+    // Parse JSON fields and add relationship data
+    return memories.map(memory => ({
+      ...memory,
+      container_tags: memory.container_tags ? JSON.parse(memory.container_tags) : [],
+      metadata: memory.metadata ? JSON.parse(memory.metadata) : {}
+    }));
+  }
+
+  /**
+   * ENHANCED: Generate simple content hash for deduplication
+   */
+  private generateContentHash(text: string): string {
+    const normalized = text.trim().toLowerCase().replace(/\s+/g, ' ');
+    let hash = 0;
+    for (let i = 0; i < normalized.length; i++) {
+      const char = normalized.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return hash.toString(16);
+  }
+
+  /**
+   * LEGACY: Get chunk data by IDs with user-based filtering
+   * @deprecated Use getDocumentChunksByIds instead
    */
   private async getChunksByIds(ids: string[], userId: string): Promise<any[]> {
     if (ids.length === 0) {

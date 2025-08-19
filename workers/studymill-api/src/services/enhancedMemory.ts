@@ -89,12 +89,16 @@ export class EnhancedMemoryService {
   }
 
   /**
-   * Create a new memory with enhanced features
+   * ENHANCED: Create a new memory with smart vector creation strategy
+   * Implements Phase 2: Enhanced Memory Creation Strategy
    */
   async createMemory(userId: string, data: CreateMemoryData): Promise<Memory> {
     const memoryId = this.generateId();
     const now = new Date().toISOString();
 
+    // Determine if this memory should create enhanced vectors
+    const shouldCreateEnhancedVectors = await this.shouldCreateEnhancedVectors(data, userId);
+    
     const memory: Memory = {
       id: memoryId,
       userId,
@@ -102,7 +106,13 @@ export class EnhancedMemoryService {
       sourceType: data.sourceType,
       sourceId: data.sourceId,
       containerTags: data.containerTags || [],
-      metadata: data.metadata || {},
+      metadata: {
+        ...data.metadata || {},
+        // Track vector creation strategy
+        vectorStrategy: shouldCreateEnhancedVectors ? 'enhanced' : 'basic',
+        semanticValueAdded: shouldCreateEnhancedVectors,
+        creationReason: await this.getCreationReason(data)
+      },
       createdAt: now,
       updatedAt: now
     };
@@ -128,8 +138,12 @@ export class EnhancedMemoryService {
       throw createError(500, 'Failed to create memory');
     }
 
-    // Create memory chunks and embeddings
-    await this.createMemoryChunks(memory);
+    // Create memory chunks and embeddings with appropriate strategy
+    if (shouldCreateEnhancedVectors) {
+      await this.createEnhancedMemoryChunks(memory);
+    } else {
+      await this.createBasicMemoryChunks(memory);
+    }
 
     // Add hierarchical tags if provided
     if (data.tagIds && data.tagIds.length > 0) {
@@ -137,14 +151,97 @@ export class EnhancedMemoryService {
     }
 
     // Background task: Find and create relationships with similar memories
-    // Skip in test environment to avoid interference
-    if (process.env.NODE_ENV !== 'test') {
+    // Only for enhanced memories to preserve cost efficiency
+    if (shouldCreateEnhancedVectors && process.env.NODE_ENV !== 'test') {
       this.createAutomaticRelationships(memory).catch(error => {
         console.error('Failed to create automatic relationships:', error);
       });
     }
 
     return memory;
+  }
+
+  /**
+   * ENHANCED: Determine if a memory should create enhanced vectors
+   * Smart triggers based on semantic value analysis
+   */
+  private async shouldCreateEnhancedVectors(data: CreateMemoryData, userId: string): Promise<boolean> {
+    // Always create enhanced vectors for user annotations and manual memories
+    if (data.sourceType === 'manual' || data.sourceType === 'conversation') {
+      return true;
+    }
+
+    // Enhanced vectors for audio with topic segmentation
+    if (data.sourceType === 'audio' && data.metadata?.memoryType === 'audio_topic_segment') {
+      return true;
+    }
+
+    // Enhanced vectors for web content (user-curated)
+    if (data.sourceType === 'web') {
+      return true;
+    }
+
+    // For document imports, check if this adds semantic value
+    if (data.sourceType === 'document') {
+      // Check if user has added tags or custom metadata
+      if (data.containerTags && data.containerTags.length > 1) {
+        return true;
+      }
+      
+      // Check if this is a subsequent processing with user annotations
+      if (data.metadata?.userAnnotated || data.metadata?.processingLevel === 'premium') {
+        return true;
+      }
+
+      // Check content length - shorter content often has more focused semantic value
+      if (data.content.length < 1000) {
+        return true;
+      }
+
+      // Check if similar content already exists (avoid duplicate document vectors)
+      const hasExistingDocument = await this.hasExistingDocumentMemory(data.sourceId, userId);
+      if (hasExistingDocument) {
+        return false; // Use basic vectors to avoid duplication
+      }
+    }
+
+    // Default to basic vectors for bulk document imports
+    return false;
+  }
+
+  /**
+   * ENHANCED: Get human-readable creation reason for metadata
+   */
+  private async getCreationReason(data: CreateMemoryData): Promise<string> {
+    if (data.sourceType === 'manual') return 'user_annotation';
+    if (data.sourceType === 'conversation') return 'chat_context';
+    if (data.sourceType === 'audio') return 'audio_transcription';
+    if (data.sourceType === 'web') return 'web_content';
+    if (data.metadata?.userAnnotated) return 'annotated_document';
+    if (data.metadata?.processingLevel === 'premium') return 'premium_processing';
+    if (data.containerTags && data.containerTags.length > 1) return 'multi_tagged_content';
+    return 'document_import';
+  }
+
+  /**
+   * ENHANCED: Check if document memory already exists
+   */
+  private async hasExistingDocumentMemory(sourceId: string | undefined, userId: string): Promise<boolean> {
+    if (!sourceId) return false;
+
+    try {
+      const result = await this.dbService.queryFirst(
+        `SELECT id FROM memories 
+         WHERE user_id = ? AND source_id = ? AND source_type = 'document' 
+         AND deleted_at IS NULL 
+         LIMIT 1`,
+        [userId, sourceId]
+      );
+      return !!result;
+    } catch (error) {
+      console.warn('Failed to check existing document memory:', error);
+      return false;
+    }
   }
 
   /**
@@ -678,11 +775,163 @@ Synthesis:`
   // createMemoryChunks, deleteMemoryChunks, mapDbRowToMemory, etc.
 
   /**
-   * Create memory chunks and embeddings
+   * ENHANCED: Create enhanced memory chunks with relationship detection
+   * Used for user-facing memories with high semantic value
    */
-  private async createMemoryChunks(memory: Memory): Promise<void> {
-    // Simple chunking - split by sentences and limit to ~500 chars
-    const sentences = memory.content.split(/[.!?]+/).filter(s => s.trim().length > 0);
+  private async createEnhancedMemoryChunks(memory: Memory): Promise<void> {
+    console.log(`Creating enhanced memory chunks for memory ${memory.id}`);
+    
+    // Enhanced chunking with better semantic boundaries
+    const chunks = await this.createSemanticChunks(memory.content);
+    
+    // Create database entries and embeddings for each chunk
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkId = this.generateId();
+      const chunk = chunks[i];
+
+      // Insert chunk into database
+      await this.dbService.execute(
+        `INSERT INTO memory_chunks (id, memory_id, chunk_index, content, token_count, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          chunkId,
+          memory.id,
+          i,
+          chunk,
+          Math.ceil(chunk.length / 4), // Rough token estimate
+          new Date().toISOString()
+        ]
+      );
+
+      // Create embedding for the chunk with enhanced metadata
+      try {
+        const embeddingResponse = await this.vectorService.generateEmbeddings([chunk]);
+        const embedding = embeddingResponse.embeddings[0];
+        
+        // Store in Vectorize with enhanced user partitioning metadata
+        await this.vectorService.insertVectors([{
+          id: chunkId,
+          values: embedding,
+          metadata: {
+            user_id: memory.userId,
+            memory_id: memory.id,
+            source_type: 'memory', // Mark as memory vector
+            memory_source_type: memory.sourceType,
+            container_tags: JSON.stringify(memory.containerTags),
+            chunk_index: i,
+            created_at: memory.createdAt,
+            vector_type: 'enhanced',
+            semantic_focus: 'relationships'
+          }
+        }]);
+
+        // Update chunk with embedding ID
+        await this.dbService.execute(
+          `UPDATE memory_chunks SET embedding_id = ? WHERE id = ?`,
+          [chunkId, chunkId]
+        );
+      } catch (error) {
+        console.error(`Failed to create enhanced embedding for chunk ${chunkId}:`, error);
+        // Continue with other chunks even if one fails
+      }
+    }
+  }
+
+  /**
+   * ENHANCED: Create basic memory chunks for document imports
+   * Used for bulk document processing with cost efficiency
+   */
+  private async createBasicMemoryChunks(memory: Memory): Promise<void> {
+    console.log(`Creating basic memory chunks for memory ${memory.id}`);
+    
+    // Simple chunking for document imports
+    const chunks = this.createSimpleChunks(memory.content);
+    
+    // Create database entries and embeddings for each chunk
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkId = this.generateId();
+      const chunk = chunks[i];
+
+      // Insert chunk into database
+      await this.dbService.execute(
+        `INSERT INTO memory_chunks (id, memory_id, chunk_index, content, token_count, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          chunkId,
+          memory.id,
+          i,
+          chunk,
+          Math.ceil(chunk.length / 4), // Rough token estimate
+          new Date().toISOString()
+        ]
+      );
+
+      // Create embedding for the chunk with basic metadata
+      try {
+        const embeddingResponse = await this.vectorService.generateEmbeddings([chunk]);
+        const embedding = embeddingResponse.embeddings[0];
+        
+        // Store in Vectorize with basic user partitioning metadata
+        await this.vectorService.insertVectors([{
+          id: chunkId,
+          values: embedding,
+          metadata: {
+            user_id: memory.userId,
+            memory_id: memory.id,
+            source_type: 'memory', // Mark as memory vector
+            memory_source_type: memory.sourceType,
+            container_tags: JSON.stringify(memory.containerTags),
+            chunk_index: i,
+            created_at: memory.createdAt,
+            vector_type: 'basic',
+            semantic_focus: 'content'
+          }
+        }]);
+
+        // Update chunk with embedding ID
+        await this.dbService.execute(
+          `UPDATE memory_chunks SET embedding_id = ? WHERE id = ?`,
+          [chunkId, chunkId]
+        );
+      } catch (error) {
+        console.error(`Failed to create basic embedding for chunk ${chunkId}:`, error);
+        // Continue with other chunks even if one fails
+      }
+    }
+  }
+
+  /**
+   * ENHANCED: Create semantic chunks with better boundaries
+   */
+  private async createSemanticChunks(content: string): Promise<string[]> {
+    // Split by sentences and create semantically coherent chunks
+    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const chunks: string[] = [];
+    let currentChunk = '';
+    
+    for (const sentence of sentences) {
+      const trimmedSentence = sentence.trim();
+      if (currentChunk.length + trimmedSentence.length > 300 && currentChunk.length > 0) {
+        chunks.push(currentChunk.trim());
+        currentChunk = trimmedSentence;
+      } else {
+        currentChunk += (currentChunk ? '. ' : '') + trimmedSentence;
+      }
+    }
+    
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
+    }
+    
+    return chunks.length > 0 ? chunks : [content]; // Fallback to full content
+  }
+
+  /**
+   * ENHANCED: Create simple chunks for bulk processing
+   */
+  private createSimpleChunks(content: string): string[] {
+    // Simple sentence-based chunking for efficiency
+    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0);
     const chunks: string[] = [];
     let currentChunk = '';
 
@@ -698,6 +947,17 @@ Synthesis:`
     if (currentChunk.trim()) {
       chunks.push(currentChunk.trim());
     }
+
+    return chunks.length > 0 ? chunks : [content]; // Fallback to full content
+  }
+
+  /**
+   * LEGACY: Create memory chunks and embeddings
+   * @deprecated Use createEnhancedMemoryChunks or createBasicMemoryChunks instead
+   */
+  private async createMemoryChunks(memory: Memory): Promise<void> {
+    // LEGACY: Simple chunking - split by sentences and limit to ~500 chars
+    const chunks = this.createSimpleChunks(memory.content);
 
     // Create database entries and embeddings for each chunk
     for (let i = 0; i < chunks.length; i++) {

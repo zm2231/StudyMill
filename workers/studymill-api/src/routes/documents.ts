@@ -7,6 +7,8 @@
 import { Hono } from 'hono';
 import { UnifiedDocumentProcessor, UnifiedProcessingOptions } from '../services/unifiedDocumentProcessor';
 import { ErrorHandler } from '../utils/processing-errors';
+import { DatabaseService } from '../services/database';
+import { authMiddleware } from '../middleware/auth';
 
 interface Env {
   PARSE_EXTRACT_API_KEY?: string;
@@ -15,6 +17,11 @@ interface Env {
 }
 
 const documents = new Hono<{ Bindings: Env }>();
+
+// Apply auth middleware to protected routes
+documents.use('/', authMiddleware);
+documents.use('/:id', authMiddleware);
+documents.use('/:id/*', authMiddleware);
 
 /**
  * POST /documents/process
@@ -341,6 +348,228 @@ documents.post('/webhook/processing-complete', async (c) => {
     return c.json({
       success: false,
       error: error instanceof Error ? error.message : 'Webhook processing failed'
+    }, 500);
+  }
+});
+
+/**
+ * GET /documents
+ * List user's documents with filtering and pagination
+ */
+documents.get('/', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const courseId = c.req.query('courseId');
+    const types = c.req.query('types')?.split(',');
+    const tags = c.req.query('tags')?.split(',');
+    const query = c.req.query('query');
+    const limit = parseInt(c.req.query('limit') || '50');
+    const offset = parseInt(c.req.query('offset') || '0');
+
+    const dbService = new DatabaseService(c.env.DB);
+    
+    // Build WHERE conditions
+    let whereConditions = ['user_id = ?'];
+    let params: any[] = [userId];
+    
+    if (courseId) {
+      whereConditions.push('course_id = ?');
+      params.push(courseId);
+    }
+    
+    if (types && types.length > 0) {
+      whereConditions.push(`file_type IN (${types.map(() => '?').join(',')})`);
+      params.push(...types);
+    }
+    
+    if (query) {
+      whereConditions.push('(filename LIKE ? OR processing_status LIKE ?)');
+      params.push(`%${query}%`, `%${query}%`);
+    }
+
+    const whereClause = whereConditions.join(' AND ');
+    
+    // Get documents with course information
+    const sql = `
+      SELECT 
+        d.*,
+        c.name as course_name,
+        c.description as course_description
+      FROM documents d
+      LEFT JOIN courses c ON d.course_id = c.id
+      WHERE ${whereClause}
+      ORDER BY d.created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+    
+    params.push(limit, offset);
+    
+    const result = await dbService.query(sql, params);
+    const documents = result.results || [];
+
+    // Get total count
+    const countSql = `SELECT COUNT(*) as total FROM documents d WHERE ${whereClause.replace(/, LIMIT.*$/, '')}`;
+    const countResult = await dbService.query(countSql, params.slice(0, -2));
+    const total = (countResult.results?.[0] as any)?.total || 0;
+
+    // Transform documents to match frontend expectations
+    const transformedDocuments = documents.map((doc: any) => ({
+      id: doc.id,
+      title: doc.filename.replace(/\.[^/.]+$/, ""), // Remove extension
+      type: doc.file_type,
+      fileUrl: doc.processing_status === 'ready' ? `/api/v1/documents/${doc.id}/content` : undefined,
+      course: doc.course_name ? {
+        name: doc.course_name,
+        color: '#4A7C2A', // Default color, TODO: get from course
+        code: doc.course_name // Simplified for now
+      } : undefined,
+      tags: [], // TODO: implement tags
+      updatedAt: new Date(doc.updated_at),
+      status: doc.processing_status === 'ready' ? 'ready' : 
+              doc.processing_status === 'processing' ? 'processing' : 'error',
+      size: doc.file_size,
+      syncStatus: 'synced' as const
+    }));
+
+    return c.json({
+      success: true,
+      documents: transformedDocuments,
+      pagination: {
+        total,
+        limit,
+        offset,
+        has_more: total > offset + limit
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Get documents error:', error);
+    return c.json({
+      success: false,
+      error: error.message || 'Failed to get documents'
+    }, 500);
+  }
+});
+
+/**
+ * GET /documents/:id
+ * Get specific document by ID
+ */
+documents.get('/:id', async (c) => {
+  try {
+    const documentId = c.req.param('id');
+    const userId = c.get('userId');
+
+    const dbService = new DatabaseService(c.env.DB);
+    
+    const sql = `
+      SELECT 
+        d.*,
+        c.name as course_name,
+        c.description as course_description
+      FROM documents d
+      LEFT JOIN courses c ON d.course_id = c.id
+      WHERE d.id = ? AND d.user_id = ?
+    `;
+    
+    const result = await dbService.query(sql, [documentId, userId]);
+    const doc = (result.results?.[0] as any);
+
+    if (!doc) {
+      return c.json({
+        success: false,
+        error: 'Document not found'
+      }, 404);
+    }
+
+    // Transform document to match frontend expectations
+    const transformedDocument = {
+      id: doc.id,
+      title: doc.filename.replace(/\.[^/.]+$/, ""),
+      type: doc.file_type,
+      fileUrl: doc.processing_status === 'ready' ? `/api/v1/documents/${doc.id}/content` : undefined,
+      course: doc.course_name ? {
+        name: doc.course_name,
+        color: '#4A7C2A',
+        code: doc.course_name
+      } : undefined,
+      tags: [],
+      updatedAt: new Date(doc.updated_at),
+      status: doc.processing_status === 'ready' ? 'ready' : 
+              doc.processing_status === 'processing' ? 'processing' : 'error',
+      size: doc.file_size,
+      syncStatus: 'synced' as const,
+      canEdit: doc.file_type === 'note' || doc.file_type === 'text'
+    };
+
+    return c.json({
+      success: true,
+      document: transformedDocument
+    });
+
+  } catch (error: any) {
+    console.error('Get document error:', error);
+    return c.json({
+      success: false,
+      error: error.message || 'Failed to get document'
+    }, 500);
+  }
+});
+
+/**
+ * GET /documents/:id/content
+ * Get document content (for download/viewing)
+ */
+documents.get('/:id/content', async (c) => {
+  try {
+    const documentId = c.req.param('id');
+    const userId = c.get('userId');
+
+    const dbService = new DatabaseService(c.env.DB);
+    
+    // Get document info
+    const sql = 'SELECT * FROM documents WHERE id = ? AND user_id = ?';
+    const result = await dbService.query(sql, [documentId, userId]);
+    const doc = (result.results?.[0] as any);
+
+    if (!doc) {
+      return c.json({
+        success: false,
+        error: 'Document not found'
+      }, 404);
+    }
+
+    if (doc.processing_status !== 'ready') {
+      return c.json({
+        success: false,
+        error: 'Document not ready for download'
+      }, 400);
+    }
+
+    // Get file from R2
+    const object = await c.env.R2_STORAGE.get(doc.r2_key);
+    
+    if (!object) {
+      return c.json({
+        success: false,
+        error: 'File not found in storage'
+      }, 404);
+    }
+
+    // Set appropriate headers
+    const headers = new Headers();
+    headers.set('Content-Type', doc.file_type || 'application/octet-stream');
+    headers.set('Content-Disposition', `inline; filename="${doc.filename}"`);
+    
+    return new Response(object.body, {
+      headers
+    });
+
+  } catch (error: any) {
+    console.error('Get document content error:', error);
+    return c.json({
+      success: false,
+      error: error.message || 'Failed to get document content'
     }, 500);
   }
 });

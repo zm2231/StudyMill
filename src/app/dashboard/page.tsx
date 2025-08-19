@@ -1,12 +1,15 @@
 'use client';
 
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { LibraryLayout } from '@/components/library/LibraryLayout';
+import { AppShell } from '@/components/layout/AppShell';
+import { HybridDashboard } from '@/components/dashboard/HybridDashboard';
 
 export default function DashboardPage() {
   return (
     <ProtectedRoute>
-      <LibraryLayout />
+      <AppShell>
+        <HybridDashboard />
+      </AppShell>
     </ProtectedRoute>
   );
 }

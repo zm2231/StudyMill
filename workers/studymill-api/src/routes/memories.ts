@@ -146,13 +146,13 @@ memoryRoutes.delete('/:id', async (c) => {
   }
 });
 
-// Search memories
+// ENHANCED: Search memories with academic workflow optimization
 memoryRoutes.post('/search', async (c) => {
   try {
     const userId = c.get('userId');
     const body = await c.req.json();
     
-    const { query, filters = {}, limit = 10 } = body;
+    const { query, filters = {}, limit = 10, workflow = 'studying' } = body;
 
     if (!query) {
       throw createError(400, 'Search query is required');
@@ -161,36 +161,82 @@ memoryRoutes.post('/search', async (c) => {
     const dbService = new DatabaseService(c.env.DB);
     const memoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
 
+    // Use the enhanced memory search for context-optimized results
     const results = await memoryService.searchMemories(userId, query, {
       ...filters,
       limit
     });
 
-    return c.json({ results, query, filters });
+    // Add workflow-specific enhancements
+    const enhancedResults = results.map(result => ({
+      ...result,
+      workflowOptimized: workflow === 'studying',
+      relationshipData: result.metadata?.relationships || [],
+      crossCourseConnections: result.containerTags?.length > 1
+    }));
+
+    return c.json({ 
+      results: enhancedResults, 
+      query, 
+      filters,
+      workflow,
+      searchType: 'memory_context_optimized'
+    });
   } catch (error: any) {
     if (error.status) throw error;
     throw createError(500, 'Failed to search memories', error.message);
   }
 });
 
-// Import from document
+// ENHANCED: Import from document using hybrid approach
 memoryRoutes.post('/import/document', async (c) => {
   try {
     const userId = c.get('userId');
     const body = await c.req.json();
     
-    const { document_id, container_tags = [] } = body;
+    const { document_id, container_tags = [], processing_level = 'basic' } = body;
 
     if (!document_id) {
       throw createError(400, 'Document ID is required');
     }
 
     const dbService = new DatabaseService(c.env.DB);
-    const memoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
+    
+    // HYBRID APPROACH: Use basic MemoryService for bulk document imports (efficiency)
+    // This creates document-optimized vectors for structure preservation
+    const basicMemoryService = new MemoryService(dbService, c.env.VECTORIZE, c.env.AI);
+    const documentMemories = await basicMemoryService.importFromDocument(document_id, userId, container_tags);
 
-    const memories = await memoryService.importFromDocument(document_id, userId, container_tags);
+    // If premium processing or user annotations, also create enhanced memory vectors
+    let enhancedMemories = [];
+    if (processing_level === 'premium' || container_tags.length > 1) {
+      const enhancedMemoryService = new EnhancedMemoryService(dbService, c.env.VECTORIZE, c.env.AI, c.env.GEMINI_API_KEY);
+      
+      // Create selective enhanced memories for key content
+      for (const memory of documentMemories.slice(0, 3)) { // Limit to first 3 for cost efficiency
+        const enhancedMemory = await enhancedMemoryService.createMemory(userId, {
+          content: memory.content,
+          sourceType: 'document',
+          sourceId: document_id,
+          containerTags: [...container_tags, 'enhanced_processing'],
+          metadata: {
+            originalMemoryId: memory.id,
+            processingLevel: 'premium',
+            userAnnotated: true
+          }
+        });
+        enhancedMemories.push(enhancedMemory);
+      }
+    }
 
-    return c.json({ memories, imported: memories.length });
+    return c.json({ 
+      documentMemories,
+      enhancedMemories,
+      imported: documentMemories.length,
+      enhanced: enhancedMemories.length,
+      processingLevel: processing_level,
+      hybridApproach: true
+    });
   } catch (error: any) {
     if (error.status) throw error;
     throw createError(500, 'Failed to import from document', error.message);

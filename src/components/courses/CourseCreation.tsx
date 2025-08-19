@@ -210,9 +210,12 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
     <Modal
       opened={opened}
       onClose={handleClose}
-      title={editingCourse ? "Edit Course" : "Create New Course"}
+      title={editingCourse ? "Edit Course" : "Create Course"}
       size="lg"
-      centered
+      radius="md"
+      styles={{
+        title: { fontSize: '1.25rem', fontWeight: 600 }
+      }}
     >
       <Stack gap="lg">
         {error && (
@@ -228,14 +231,9 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
         )}
 
         {/* Basic Information */}
-        <Card p="md" withBorder>
-          <Title order={4} mb="md" size="h5">
-            <Group gap="xs">
-              <IconSchool size={18} />
-              Course Information
-            </Group>
-          </Title>
-
+        <Stack gap="md">
+          <Text fw={500}>Course Information</Text>
+          
           <Grid>
             <Grid.Col span={8}>
               <TextInput
@@ -256,7 +254,7 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
             </Grid.Col>
           </Grid>
 
-          <Grid mt="sm">
+          <Grid>
             <Grid.Col span={6}>
               <TextInput
                 label="Instructor"
@@ -289,19 +287,15 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
             placeholder="Brief description of the course..."
             value={formData.description}
             onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-            mt="sm"
             rows={2}
           />
-        </Card>
+        </Stack>
+
+        <Divider />
 
         {/* Semester Information */}
-        <Card p="md" withBorder>
-          <Title order={4} mb="md" size="h5">
-            <Group gap="xs">
-              <IconCalendar size={18} />
-              Semester Details
-            </Group>
-          </Title>
+        <Stack gap="md">
+          <Text fw={500}>Semester Details</Text>
 
           <Grid>
             <Grid.Col span={4}>
@@ -348,16 +342,13 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
               />
             </Grid.Col>
           </Grid>
-        </Card>
+        </Stack>
+
+        <Divider />
 
         {/* Schedule Setup */}
-        <Card p="md" withBorder>
-          <Title order={4} mb="md" size="h5">
-            <Group gap="xs">
-              <IconClock size={18} />
-              Class Schedule
-            </Group>
-          </Title>
+        <Stack gap="md">
+          <Text fw={500}>Class Schedule</Text>
 
           {/* Add Schedule Form */}
           <Grid>
@@ -408,10 +399,13 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
             </Grid.Col>
             <Grid.Col span={1}>
               <Button
-                mt="auto"
                 onClick={handleAddScheduleSlot}
                 variant="light"
+                color="forest-green"
                 size="sm"
+                styles={{
+                  root: { marginTop: 'auto' }
+                }}
               >
                 <IconPlus size={16} />
               </Button>
@@ -420,44 +414,44 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
 
           {/* Current Schedule List */}
           {formData.schedule.length > 0 && (
-            <>
-              <Divider my="md" />
-              <Text size="sm" fw={500} mb="xs">Current Schedule:</Text>
-              <Stack gap="xs">
-                {formData.schedule.map((slot, index) => (
-                  <Group key={index} justify="space-between" p="xs" style={{ 
-                    backgroundColor: formData.color + '10', 
-                    borderRadius: 6,
-                    border: `1px solid ${formData.color}30`
-                  }}>
-                    <Text size="sm">{formatScheduleDisplay(slot)}</Text>
-                    <ActionIcon
-                      size="sm"
-                      variant="subtle"
-                      color="red"
-                      onClick={() => removeScheduleSlot(index)}
-                    >
-                      <IconTrash size={14} />
-                    </ActionIcon>
-                  </Group>
-                ))}
-              </Stack>
-            </>
+            <Stack gap="xs">
+              <Text size="sm" fw={500}>Current Schedule:</Text>
+              {formData.schedule.map((slot, index) => (
+                <Group key={index} justify="space-between" p="sm" withBorder style={{ 
+                  backgroundColor: 'var(--mantine-color-gray-0)',
+                  borderRadius: 6
+                }}>
+                  <Text size="sm">{formatScheduleDisplay(slot)}</Text>
+                  <ActionIcon
+                    size="sm"
+                    variant="subtle"
+                    color="red"
+                    onClick={() => removeScheduleSlot(index)}
+                  >
+                    <IconTrash size={14} />
+                  </ActionIcon>
+                </Group>
+              ))}
+            </Stack>
           )}
-        </Card>
+        </Stack>
 
         {/* Actions */}
-        <Group justify="flex-end">
-          <Button variant="outline" onClick={handleClose}>
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleSubmit}
-            loading={loading}
-            disabled={success}
-          >
-            {editingCourse ? 'Update Course' : 'Create Course'}
-          </Button>
+        <Group justify="space-between">
+          <Group></Group>
+          <Group>
+            <Button variant="light" onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSubmit}
+              loading={loading}
+              disabled={success}
+              color="forest-green"
+            >
+              {editingCourse ? 'Update Course' : 'Create Course'}
+            </Button>
+          </Group>
         </Group>
       </Stack>
     </Modal>
