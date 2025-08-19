@@ -153,20 +153,24 @@ export function FocusTimerWidget() {
         {/* Session Stats */}
         <Group justify="space-between" p="sm" style={{ backgroundColor: 'var(--sanctuary-surface)', borderRadius: '6px' }}>
           <Stack gap={1} align="center">
-            <Text size="sm" fw={600} c="var(--forest-green-primary)">3</Text>
+            <Text size="sm" fw={600} c="dimmed">--</Text>
             <Text size="xs" c="dimmed">Today</Text>
           </Stack>
           
           <Stack gap={1} align="center">
-            <Text size="sm" fw={600} c="var(--forest-green-primary)">2h 15m</Text>
+            <Text size="sm" fw={600} c="dimmed">--</Text>
             <Text size="xs" c="dimmed">This Week</Text>
           </Stack>
           
           <Stack gap={1} align="center">
-            <Text size="sm" fw={600} c="var(--forest-green-primary)">12</Text>
+            <Text size="sm" fw={600} c="dimmed">--</Text>
             <Text size="xs" c="dimmed">Streak</Text>
           </Stack>
         </Group>
+        
+        <Text size="xs" c="dimmed" ta="center">
+          ⚠️ Timer tracking is functional, but history stats are work-in-progress
+        </Text>
       </Stack>
     </Card>
   );

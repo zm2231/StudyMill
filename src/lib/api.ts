@@ -866,6 +866,97 @@ class ApiClient {
     return this.request(`/api/v1/assignments/course/${courseId}`);
   }
 
+  // Activity tracking endpoints
+  async getRecentActivities(options?: {
+    limit?: number;
+    actions?: string[];
+  }): Promise<{
+    success: boolean;
+    activities: Array<{
+      id: string;
+      title: string;
+      action: 'uploaded' | 'created' | 'processed' | 'viewed' | 'completed' | 'updated' | 'deleted';
+      type: 'document' | 'audio' | 'note' | 'flashcard' | 'study-guide' | 'assignment' | 'course';
+      course?: {
+        id: string;
+        name: string;
+        color: string;
+        code: string;
+      };
+      timestamp: Date;
+      metadata: Record<string, any>;
+    }>;
+  }> {
+    const searchParams = new URLSearchParams();
+    if (options?.limit) searchParams.set('limit', options.limit.toString());
+    if (options?.actions) searchParams.set('actions', options.actions.join(','));
+    
+    const query = searchParams.toString();
+    return this.request(`/api/v1/activity/recent${query ? `?${query}` : ''}`);
+  }
+
+  async getRecentItems(options?: {
+    limit?: number;
+  }): Promise<{
+    success: boolean;
+    recentItems: Array<{
+      id: string;
+      title: string;
+      type: 'document' | 'note' | 'study-guide' | 'flashcard' | 'assignment';
+      course?: {
+        id: string;
+        name: string;
+        color: string;
+        code: string;
+      };
+      lastAccessed: Date;
+      progress?: number;
+    }>;
+  }> {
+    const searchParams = new URLSearchParams();
+    if (options?.limit) searchParams.set('limit', options.limit.toString());
+    
+    const query = searchParams.toString();
+    return this.request(`/api/v1/activity/recent-items${query ? `?${query}` : ''}`);
+  }
+
+  async getActivityStats(days?: number): Promise<{
+    success: boolean;
+    stats: {
+      totalActivities: number;
+      documentsUploaded: number;
+      itemsCreated: number;
+      audioProcessed: number;
+      documentsViewed: number;
+    };
+  }> {
+    const searchParams = new URLSearchParams();
+    if (days) searchParams.set('days', days.toString());
+    
+    const query = searchParams.toString();
+    return this.request(`/api/v1/activity/stats${query ? `?${query}` : ''}`);
+  }
+
+  async logActivity(data: {
+    action: 'uploaded' | 'created' | 'processed' | 'viewed' | 'completed' | 'updated' | 'deleted';
+    resourceType: 'document' | 'audio' | 'note' | 'flashcard' | 'study-guide' | 'assignment' | 'course';
+    resourceId: string;
+    resourceTitle: string;
+    courseId?: string;
+    courseName?: string;
+    courseColor?: string;
+    courseCode?: string;
+    metadata?: Record<string, any>;
+  }): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    return this.request('/api/v1/activity/log', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   // Health check
   async healthCheck(): Promise<{ message: string; status: string; timestamp: string }> {
     return this.request('/');

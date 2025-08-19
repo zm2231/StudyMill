@@ -52,26 +52,66 @@ export function PPTXViewer({ fileUrl, fileName = 'Presentation' }: PPTXViewerPro
       setLoading(true);
       setError(null);
 
-      // TODO: Implement PPTXjs integration
-      // For now, create mock slides
-      const mockSlides: Slide[] = [
-        {
-          id: 0,
-          content: '<div style="padding: 40px; text-align: center; background: white; height: 400px; display: flex; align-items: center; justify-content: center;"><h1>Slide 1</h1><p>PPTX viewer will be implemented with PPTXjs</p></div>',
-          notes: 'This is a placeholder for PPTX content'
-        },
-        {
-          id: 1,
-          content: '<div style="padding: 40px; text-align: center; background: white; height: 400px; display: flex; align-items: center; justify-content: center;"><h1>Slide 2</h1><p>Full PPTX rendering coming soon</p></div>',
-          notes: 'Another placeholder slide'
-        }
-      ];
+      // Import PPTXjs dynamically to avoid SSR issues
+      const PPTXJS = await import('pptxjs');
       
-      setSlides(mockSlides);
+      // Fetch the PPTX file
+      const response = await fetch(fileUrl);
+      if (!response.ok) {
+        throw new Error('Failed to fetch PPTX file');
+      }
+      
+      const arrayBuffer = await response.arrayBuffer();
+      
+      // Create a container element for PPTXjs
+      const tempContainer = document.createElement('div');
+      tempContainer.style.display = 'none';
+      document.body.appendChild(tempContainer);
+      
+      // Parse PPTX with PPTXjs
+      const parsedSlides: Slide[] = [];
+      let slideCount = 0;
+      
+      await new Promise((resolve, reject) => {
+        PPTXJS.default(arrayBuffer, tempContainer, {
+          slideMode: true,
+          onSlideLoaded: (slideElement: HTMLElement, slideNumber: number) => {
+            parsedSlides.push({
+              id: slideNumber - 1,
+              content: slideElement.innerHTML,
+              notes: '', // PPTXjs doesn't easily extract speaker notes
+              thumbnail: undefined
+            });
+            slideCount++;
+          },
+          onSlideError: (error: any) => {
+            console.error('Slide parsing error:', error);
+          },
+          onComplete: () => {
+            document.body.removeChild(tempContainer);
+            resolve(void 0);
+          },
+          onError: (error: any) => {
+            document.body.removeChild(tempContainer);
+            reject(error);
+          }
+        });
+      });
+      
+      if (parsedSlides.length === 0) {
+        // Fallback to basic parsing if no slides were loaded
+        parsedSlides.push({
+          id: 0,
+          content: '<div style="padding: 40px; text-align: center; background: white; height: 400px; display: flex; align-items: center; justify-content: center;"><h1>PPTX File Loaded</h1><p>Content could not be parsed. Please download to view.</p></div>',
+          notes: 'PPTX parsing completed but slides could not be rendered'
+        });
+      }
+      
+      setSlides(parsedSlides);
       setLoading(false);
     } catch (err) {
       console.error('PPTX loading error:', err);
-      setError('Failed to load PowerPoint presentation');
+      setError('Failed to load PowerPoint presentation. The file may be corrupted or unsupported.');
       setLoading(false);
     }
   };

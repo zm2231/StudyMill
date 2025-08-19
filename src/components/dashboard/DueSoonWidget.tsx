@@ -2,6 +2,7 @@
 
 import { Card, Title, Stack, Group, Text, Button, Badge, Avatar, Progress } from '@mantine/core';
 import { IconClock, IconAlertTriangle, IconChevronRight, IconCalendarDue } from '@tabler/icons-react';
+import { useRouter } from 'next/navigation';
 import { format, formatDistanceToNow, isToday, isTomorrow, addDays } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { useApi } from '@/lib/api';
@@ -61,6 +62,7 @@ export function DueSoonWidget() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const api = useApi();
+  const router = useRouter();
 
   useEffect(() => {
     const fetchDueAssignments = async () => {
@@ -72,7 +74,9 @@ export function DueSoonWidget() {
         setDueItems(response.assignments);
       } catch (err: any) {
         console.error('Failed to fetch due assignments:', err);
-        setError('Failed to load assignments');
+        // Show empty state instead of error for better UX
+        setDueItems([]);
+        setError(null);
       } finally {
         setLoading(false);
       }
@@ -113,8 +117,10 @@ export function DueSoonWidget() {
           </Stack>
         ) : dueItems.length === 0 ? (
           <Stack align="center" py="md">
-            <Text size="sm" c="dimmed">Nothing due soon</Text>
-            <Text size="xs" c="dimmed">You're all caught up!</Text>
+            <Text size="sm" c="dimmed">No assignments yet</Text>
+            <Text size="xs" c="dimmed" ta="center">
+              Add assignments to keep track of your due dates
+            </Text>
           </Stack>
         ) : (
           <Stack gap="sm">
@@ -201,6 +207,7 @@ export function DueSoonWidget() {
           color="forestGreen" 
           size="sm" 
           fullWidth
+          onClick={() => router.push('/planner')}
         >
           View Calendar
         </Button>

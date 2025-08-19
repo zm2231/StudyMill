@@ -26,7 +26,6 @@ import {
   IconCalendar, 
   IconChartBar,
   IconPlus,
-  IconChevronLeft,
   IconSettings,
   IconUser,
   IconLogout,
@@ -168,44 +167,27 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
   return (
     <>
       <Stack h="100%" gap="md">
-        {/* Sidebar Header with Collapse Toggle */}
-        <Group justify="space-between">
+        {/* Sidebar Header */}
+        <Group>
           {!collapsed && (
             <Text size="lg" fw={600} c="var(--sanctuary-text-primary)">
               StudyMill
             </Text>
           )}
-          <Tooltip 
-            label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            position="right"
-          >
-            <ActionIcon
-              variant="subtle"
-              onClick={() => onCollapse(!collapsed)}
-              size="md"
-            >
-              <IconChevronLeft 
-                size={20} 
-                style={{
-                  transform: collapsed ? 'rotate(180deg)' : 'none',
-                  transition: 'transform 120ms ease'
-                }}
-              />
-            </ActionIcon>
-          </Tooltip>
         </Group>
 
         {/* Quick Add Button */}
         <Button
           onClick={() => setQuickAddOpen(true)}
-          fullWidth
-          leftSection={<IconPlus size={20} />}
+          fullWidth={!collapsed}
+          leftSection={collapsed ? undefined : <IconPlus size={20} />}
           variant="filled"
           color="forestGreen"
-          size={collapsed ? 'compact-md' : 'md'}
+          size="md"
           justify={collapsed ? 'center' : 'start'}
+          px={collapsed ? 'sm' : 'md'}
         >
-          {!collapsed && 'Quick Add'}
+          {collapsed ? <IconPlus size={22} /> : 'Quick Add'}
         </Button>
 
         <Divider />
@@ -223,8 +205,8 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
                 key={hub.id}
                 variant={isActive ? 'light' : 'subtle'}
                 color={isActive ? 'forestGreen' : 'gray'}
-                fullWidth
-                leftSection={<Icon size={20} />}
+                fullWidth={!collapsed}
+                leftSection={collapsed ? undefined : <Icon size={20} />}
                 rightSection={!collapsed && hub.badge ? (
                   <Badge size="xs" variant="light">
                     {hub.badge}
@@ -232,6 +214,7 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
                 ) : undefined}
                 justify={collapsed ? 'center' : 'start'}
                 size="md"
+                px={collapsed ? 'sm' : 'md'}
                 styles={{
                   root: {
                     border: isActive ? '1px solid var(--forest-green-light)' : 'none',
@@ -250,7 +233,9 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
                   }
                 }}
               >
-                {!collapsed && (
+                {collapsed ? (
+                  <Icon size={22} />
+                ) : (
                   <Stack gap={2} align="flex-start">
                     <Text size="sm" fw={isActive ? 600 : 500}>
                       {hub.label}
@@ -282,12 +267,13 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
               href="/profile"
               variant="subtle"
               color="gray"
-              fullWidth
-              leftSection={<IconUser size={20} />}
+              fullWidth={!collapsed}
+              leftSection={collapsed ? undefined : <IconUser size={20} />}
               justify={collapsed ? 'center' : 'start'}
               size="sm"
+              px={collapsed ? 'xs' : 'md'}
             >
-              {!collapsed && 'Profile'}
+              {collapsed ? <IconUser size={22} /> : 'Profile'}
             </Button>
           </Tooltip>
 
@@ -298,12 +284,13 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
               href="/settings"
               variant="subtle"
               color="gray"
-              fullWidth
-              leftSection={<IconSettings size={20} />}
+              fullWidth={!collapsed}
+              leftSection={collapsed ? undefined : <IconSettings size={20} />}
               justify={collapsed ? 'center' : 'start'}
               size="sm"
+              px={collapsed ? 'xs' : 'md'}
             >
-              {!collapsed && 'Settings'}
+              {collapsed ? <IconSettings size={22} /> : 'Settings'}
             </Button>
           </Tooltip>
 
@@ -312,16 +299,17 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
             <Button
               variant="subtle"
               color="red"
-              fullWidth
-              leftSection={<IconLogout size={20} />}
+              fullWidth={!collapsed}
+              leftSection={collapsed ? undefined : <IconLogout size={20} />}
               justify={collapsed ? 'center' : 'start'}
               size="sm"
+              px={collapsed ? 'xs' : 'md'}
               onClick={() => {
                 // TODO: Implement sign out
                 console.log('Sign out clicked');
               }}
             >
-              {!collapsed && 'Sign Out'}
+              {collapsed ? <IconLogout size={22} /> : 'Sign Out'}
             </Button>
           </Tooltip>
         </Stack>

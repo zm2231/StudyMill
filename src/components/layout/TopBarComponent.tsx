@@ -27,7 +27,7 @@ import {
   IconSun,
   IconChevronRight,
   IconBell,
-  IconPanel
+  IconLayoutSidebarRightExpand
 } from '@tabler/icons-react';
 import { useMantineColorScheme, useComputedColorScheme } from '@mantine/core';
 import { useHotkeys } from 'react-hotkeys-hook';
@@ -195,7 +195,7 @@ export function TopBarComponent({
             onClick={onContextPanelToggle}
             size="md"
           >
-            <IconPanel size={20} />
+            <IconLayoutSidebarRightExpand size={20} />
           </ActionIcon>
         </Tooltip>
 

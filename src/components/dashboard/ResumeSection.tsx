@@ -1,14 +1,17 @@
 'use client';
 
 import { Card, Title, Stack, Group, Text, Button, Avatar, Badge, Progress } from '@mantine/core';
-import { IconPlay, IconBook, IconChevronRight, IconClock } from '@tabler/icons-react';
+import { IconPlayerPlay, IconBook, IconChevronRight, IconClock } from '@tabler/icons-react';
 import { formatDistanceToNow } from 'date-fns';
+import { useState, useEffect } from 'react';
+import { useApi } from '@/lib/api';
 
 interface RecentItem {
   id: string;
   title: string;
-  type: 'document' | 'note' | 'study-guide' | 'flashcard';
+  type: 'document' | 'note' | 'study-guide' | 'flashcard' | 'assignment';
   course?: {
+    id: string;
     name: string;
     color: string;
     code: string;
@@ -18,43 +21,13 @@ interface RecentItem {
   icon: React.ComponentType<any>;
 }
 
-// Mock data - will be replaced with real API data
-const mockRecentItems: RecentItem[] = [
-  {
-    id: '1',
-    title: 'Physics 101 - Chapter 3 Notes',
-    type: 'document',
-    course: { name: 'Physics 101', color: '#4A7C2A', code: 'PHYS 101' },
-    lastAccessed: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-    progress: 65,
-    icon: IconBook
-  },
-  {
-    id: '2', 
-    title: 'Calculus Study Guide',
-    type: 'study-guide',
-    course: { name: 'Calculus II', color: '#D9B68D', code: 'MATH 152' },
-    lastAccessed: new Date(Date.now() - 4 * 60 * 60 * 1000), // 4 hours ago
-    progress: 80,
-    icon: IconBook
-  },
-  {
-    id: '3',
-    title: 'Chemistry Formulas',
-    type: 'flashcard',
-    course: { name: 'Chemistry 101', color: '#C2856B', code: 'CHEM 101' },
-    lastAccessed: new Date(Date.now() - 6 * 60 * 60 * 1000), // 6 hours ago
-    progress: 45,
-    icon: IconBook
-  }
-];
-
 function getTypeColor(type: RecentItem['type']): string {
   switch (type) {
     case 'document': return 'blue';
     case 'note': return 'green';
     case 'study-guide': return 'purple';
     case 'flashcard': return 'orange';
+    case 'assignment': return 'red';
     default: return 'gray';
   }
 }
@@ -65,17 +38,63 @@ function getTypeLabel(type: RecentItem['type']): string {
     case 'note': return 'Note';
     case 'study-guide': return 'Study Guide';
     case 'flashcard': return 'Flashcards';
+    case 'assignment': return 'Assignment';
     default: return 'Item';
   }
 }
 
 export function ResumeSection() {
+  const api = useApi();
+  const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadRecentItems();
+  }, []);
+
+  const loadRecentItems = async () => {
+    if (!api.isAuthenticated()) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await api.getRecentItems({ limit: 5 });
+      
+      if (response.success) {
+        // Transform API data to match component interface
+        const transformedItems: RecentItem[] = response.recentItems.map(item => ({
+          id: item.id,
+          title: item.title,
+          type: item.type,
+          course: item.course,
+          lastAccessed: item.lastAccessed,
+          progress: item.progress,
+          icon: IconBook // Default icon, could be enhanced based on type
+        }));
+        
+        setRecentItems(transformedItems);
+      }
+    } catch (err) {
+      console.error('Failed to load recent items:', err);
+      // Show empty state instead of error for better UX
+      setRecentItems([]);
+      setError(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <Card withBorder p="lg" radius="md">
       <Stack gap="md">
         <Group justify="space-between">
           <Group gap="sm">
-            <IconPlay size={24} color="var(--forest-green-primary)" />
+            <IconPlayerPlay size={24} color="var(--forest-green-primary)" />
             <Title order={3}>Resume Where You Left Off</Title>
           </Group>
           <Button variant="subtle" size="sm" rightSection={<IconChevronRight size={14} />}>
@@ -83,14 +102,28 @@ export function ResumeSection() {
           </Button>
         </Group>
 
-        {mockRecentItems.length === 0 ? (
+        {loading ? (
           <Stack align="center" py="xl">
-            <Text size="lg" c="dimmed">No recent activity</Text>
-            <Text size="sm" c="dimmed">Start studying to see your recent materials here</Text>
+            <Text size="lg" c="dimmed">Loading recent activity...</Text>
+          </Stack>
+        ) : error ? (
+          <Stack align="center" py="xl">
+            <Text size="lg" c="red">{error}</Text>
+            <Button size="sm" variant="outline" onClick={loadRecentItems}>
+              Retry
+            </Button>
+          </Stack>
+        ) : recentItems.length === 0 ? (
+          <Stack align="center" py="xl">
+            <Text size="lg" c="dimmed">Nothing to resume yet</Text>
+            <Text size="sm" c="dimmed" ta="center">
+              Open documents, take notes, or study materials.<br />
+              Your recent progress will appear here!
+            </Text>
           </Stack>
         ) : (
           <Stack gap="sm">
-            {mockRecentItems.map((item) => {
+            {recentItems.map((item) => {
               const Icon = item.icon;
               
               return (

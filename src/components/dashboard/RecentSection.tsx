@@ -3,77 +3,34 @@
 import { Card, Title, Stack, Group, Text, Button, Avatar, Badge } from '@mantine/core';
 import { IconHistory, IconChevronRight, IconFileText, IconMicrophone, IconBrain } from '@tabler/icons-react';
 import { formatDistanceToNow } from 'date-fns';
+import { useState, useEffect } from 'react';
+import { useApi } from '@/lib/api';
 
 interface RecentActivity {
   id: string;
   title: string;
-  action: string;
-  type: 'document' | 'audio' | 'note' | 'flashcard' | 'study-guide';
+  action: 'uploaded' | 'created' | 'processed' | 'viewed' | 'completed' | 'updated' | 'deleted';
+  type: 'document' | 'audio' | 'note' | 'flashcard' | 'study-guide' | 'assignment' | 'course';
   course?: {
+    id: string;
     name: string;
     color: string;
     code: string;
   };
   timestamp: Date;
+  metadata: Record<string, any>;
   icon: React.ComponentType<any>;
 }
-
-// Mock data - will be replaced with real API data
-const mockRecentActivity: RecentActivity[] = [
-  {
-    id: '1',
-    title: 'Chapter 4 Lecture Slides',
-    action: 'uploaded',
-    type: 'document',
-    course: { name: 'Physics 101', color: '#4A7C2A', code: 'PHYS 101' },
-    timestamp: new Date(Date.now() - 1 * 60 * 60 * 1000), // 1 hour ago
-    icon: IconFileText
-  },
-  {
-    id: '2',
-    title: 'Lecture Recording - Newton\'s Laws',
-    action: 'processed',
-    type: 'audio',
-    course: { name: 'Physics 101', color: '#4A7C2A', code: 'PHYS 101' },
-    timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000), // 3 hours ago
-    icon: IconMicrophone
-  },
-  {
-    id: '3',
-    title: 'Integration Techniques Flashcards',
-    action: 'created',
-    type: 'flashcard',
-    course: { name: 'Calculus II', color: '#D9B68D', code: 'MATH 152' },
-    timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000), // 5 hours ago
-    icon: IconBrain
-  },
-  {
-    id: '4',
-    title: 'Chemistry Lab Report',
-    action: 'uploaded',
-    type: 'document',
-    course: { name: 'Chemistry 101', color: '#C2856B', code: 'CHEM 101' },
-    timestamp: new Date(Date.now() - 8 * 60 * 60 * 1000), // 8 hours ago
-    icon: IconFileText
-  },
-  {
-    id: '5',
-    title: 'Thermodynamics Study Guide',
-    action: 'generated',
-    type: 'study-guide',
-    course: { name: 'Physics 101', color: '#4A7C2A', code: 'PHYS 101' },
-    timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000), // 12 hours ago
-    icon: IconBrain
-  }
-];
 
 function getActionColor(action: string): string {
   switch (action) {
     case 'uploaded': return 'blue';
     case 'created': return 'green';
-    case 'generated': return 'purple';
     case 'processed': return 'orange';
+    case 'viewed': return 'cyan';
     case 'completed': return 'teal';
+    case 'updated': return 'yellow';
+    case 'deleted': return 'red';
     default: return 'gray';
   }
 }
@@ -85,11 +42,86 @@ function getTypeColor(type: RecentActivity['type']): string {
     case 'note': return 'green';
     case 'study-guide': return 'purple';
     case 'flashcard': return 'red';
+    case 'assignment': return 'pink';
+    case 'course': return 'indigo';
     default: return 'gray';
   }
 }
 
+function getTypeIcon(type: RecentActivity['type']): React.ComponentType<any> {
+  switch (type) {
+    case 'document': return IconFileText;
+    case 'audio': return IconMicrophone;
+    case 'note': 
+    case 'study-guide': 
+    case 'flashcard': 
+    case 'assignment': 
+    case 'course': 
+    default: return IconBrain;
+  }
+}
+
 export function RecentSection() {
+  const api = useApi();
+  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadRecentActivities();
+  }, []);
+
+  const loadRecentActivities = async () => {
+    if (!api.isAuthenticated()) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await api.getRecentActivities({ limit: 10 });
+      
+      if (response.success) {
+        // Transform API data to match component interface
+        const transformedActivities: RecentActivity[] = response.activities.map(activity => ({
+          id: activity.id,
+          title: activity.title,
+          action: activity.action,
+          type: activity.type,
+          course: activity.course,
+          timestamp: activity.timestamp,
+          metadata: activity.metadata,
+          icon: getTypeIcon(activity.type)
+        }));
+        
+        setRecentActivities(transformedActivities);
+      }
+    } catch (err) {
+      console.error('Failed to load recent activities:', err);
+      // Show empty state instead of error for better UX
+      setRecentActivities([]);
+      setError(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Calculate quick stats from real data
+  const uploadedTodayCount = recentActivities.filter(a => 
+    a.action === 'uploaded' && 
+    new Date(a.timestamp).toDateString() === new Date().toDateString()
+  ).length;
+
+  const aiGeneratedCount = recentActivities.filter(a => 
+    a.action === 'created' || a.action === 'processed'
+  ).length;
+
+  const audioProcessedCount = recentActivities.filter(a => 
+    a.type === 'audio' && a.action === 'processed'
+  ).length;
+
   return (
     <Card withBorder p="lg" radius="md">
       <Stack gap="md">
@@ -103,14 +135,28 @@ export function RecentSection() {
           </Button>
         </Group>
 
-        {mockRecentActivity.length === 0 ? (
+        {loading ? (
           <Stack align="center" py="xl">
-            <Text size="lg" c="dimmed">No recent activity</Text>
-            <Text size="sm" c="dimmed">Your recent uploads and creations will appear here</Text>
+            <Text size="lg" c="dimmed">Loading recent activity...</Text>
+          </Stack>
+        ) : error ? (
+          <Stack align="center" py="xl">
+            <Text size="lg" c="red">{error}</Text>
+            <Button size="sm" variant="outline" onClick={loadRecentActivities}>
+              Retry
+            </Button>
+          </Stack>
+        ) : recentActivities.length === 0 ? (
+          <Stack align="center" py="xl">
+            <Text size="lg" c="dimmed">Ready to start studying?</Text>
+            <Text size="sm" c="dimmed" ta="center">
+              Upload documents, record lectures, or create notes to get started.<br />
+              Your activity will appear here as you use StudyMill!
+            </Text>
           </Stack>
         ) : (
           <Stack gap="sm">
-            {mockRecentActivity.slice(0, 5).map((activity) => {
+            {recentActivities.slice(0, 5).map((activity) => {
               const Icon = activity.icon;
               
               return (
@@ -172,21 +218,21 @@ export function RecentSection() {
         <Group justify="space-between" p="sm" style={{ backgroundColor: 'var(--sanctuary-surface)', borderRadius: '6px' }}>
           <Stack gap={2} align="center">
             <Text size="lg" fw={600} c="var(--forest-green-primary)">
-              {mockRecentActivity.filter(a => a.action === 'uploaded').length}
+              {uploadedTodayCount}
             </Text>
             <Text size="xs" c="dimmed">Uploaded Today</Text>
           </Stack>
           
           <Stack gap={2} align="center">
             <Text size="lg" fw={600} c="var(--forest-green-primary)">
-              {mockRecentActivity.filter(a => a.action === 'created' || a.action === 'generated').length}
+              {aiGeneratedCount}
             </Text>
             <Text size="xs" c="dimmed">AI Generated</Text>
           </Stack>
           
           <Stack gap={2} align="center">
             <Text size="lg" fw={600} c="var(--forest-green-primary)">
-              {mockRecentActivity.filter(a => a.type === 'audio').length}
+              {audioProcessedCount}
             </Text>
             <Text size="xs" c="dimmed">Audio Processed</Text>
           </Stack>

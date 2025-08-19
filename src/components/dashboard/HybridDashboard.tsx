@@ -2,6 +2,8 @@
 
 import { Grid, Container, Stack } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
+import { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { TodaysClasses } from './TodaysClasses';
 import { ResumeSection } from './ResumeSection';
 import { RecentSection } from './RecentSection';
@@ -9,6 +11,9 @@ import { DueSoonWidget } from './DueSoonWidget';
 import { QuickAddWidget } from './QuickAddWidget';
 import { FocusTimerWidget } from './FocusTimerWidget';
 import { TipsWidget } from './TipsWidget';
+import { DocumentUpload } from '../library/DocumentUpload';
+import { AudioUpload } from '../library/AudioUpload';
+import { CourseCreation } from '../courses/CourseCreation';
 
 interface HybridDashboardProps {
   className?: string;
@@ -18,6 +23,44 @@ interface HybridDashboardProps {
 export function HybridDashboard({ className }: HybridDashboardProps) {
   // Critical 1200px breakpoint for hybrid layout
   const isWideScreen = useMediaQuery('(min-width: 75em)'); // 1200px
+  const router = useRouter();
+
+  // Modal states
+  const [showDocumentUpload, setShowDocumentUpload] = useState(false);
+  const [showAudioUpload, setShowAudioUpload] = useState(false);
+  const [showCourseCreation, setShowCourseCreation] = useState(false);
+  const [preselectedCourseId, setPreselectedCourseId] = useState<string | undefined>();
+
+  // Handle upload actions - properly integrated with upload modals
+  const handleAudioUpload = useCallback((courseId?: string) => {
+    setPreselectedCourseId(courseId);
+    setShowAudioUpload(true);
+  }, []);
+
+  const handleDocumentUpload = useCallback((courseId?: string) => {
+    setPreselectedCourseId(courseId);
+    setShowDocumentUpload(true);
+  }, []);
+
+  const handleCourseCreation = useCallback(() => {
+    setShowCourseCreation(true);
+  }, []);
+
+  // Placeholder handlers for features not yet implemented
+  const handleEventCreation = useCallback(() => {
+    // TODO: Implement event creation - route to planner
+    router.push('/planner');
+  }, [router]);
+
+  const handleNoteCreation = useCallback(() => {
+    // TODO: Implement quick note creation
+    console.log('Quick note creation - WIP');
+  }, []);
+
+  const handleFlashcardCreation = useCallback(() => {
+    // TODO: Implement flashcard creation - route to study
+    router.push('/study');  
+  }, [router]);
 
   return (
     <Container size="xl" className={className} py="md">
@@ -28,7 +71,10 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
             {/* Left Column: Main content */}
             <Grid.Col span={8}>
               <Stack gap="lg">
-                <TodaysClasses />
+                <TodaysClasses 
+                  onOpenAudioUpload={handleAudioUpload}
+                  onOpenDocumentUpload={handleDocumentUpload}
+                />
                 <ResumeSection />
                 <RecentSection />
               </Stack>
@@ -38,7 +84,14 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
             <Grid.Col span={4}>
               <Stack gap="lg">
                 <DueSoonWidget />
-                <QuickAddWidget />
+                <QuickAddWidget 
+                  onOpenDocumentUpload={handleDocumentUpload}
+                  onOpenAudioUpload={handleAudioUpload}
+                  onOpenCourseCreation={handleCourseCreation}
+                  onOpenEventCreation={handleEventCreation}
+                  onOpenNoteCreation={handleNoteCreation}
+                  onOpenFlashcardCreation={handleFlashcardCreation}
+                />
                 <FocusTimerWidget />
                 <TipsWidget />
               </Stack>
@@ -49,7 +102,10 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
           <Grid.Col span={12}>
             <Stack gap="lg">
               {/* Today's Classes - Full width */}
-              <TodaysClasses />
+              <TodaysClasses 
+                onOpenAudioUpload={handleAudioUpload}
+                onOpenDocumentUpload={handleDocumentUpload}
+              />
               
               {/* Widget Row - Split layout */}
               <Grid gutter="md">
@@ -57,7 +113,14 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
                   <DueSoonWidget />
                 </Grid.Col>
                 <Grid.Col span={6}>
-                  <QuickAddWidget />
+                  <QuickAddWidget 
+                    onOpenDocumentUpload={handleDocumentUpload}
+                    onOpenAudioUpload={handleAudioUpload}
+                    onOpenCourseCreation={handleCourseCreation}
+                    onOpenEventCreation={handleEventCreation}
+                    onOpenNoteCreation={handleNoteCreation}
+                    onOpenFlashcardCreation={handleFlashcardCreation}
+                  />
                 </Grid.Col>
               </Grid>
               
@@ -78,6 +141,24 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
           </Grid.Col>
         )}
       </Grid>
+      
+      {/* Upload Modals */}
+      <DocumentUpload 
+        opened={showDocumentUpload} 
+        onClose={() => setShowDocumentUpload(false)}
+        preselectedCourseId={preselectedCourseId}
+      />
+      
+      <AudioUpload 
+        opened={showAudioUpload} 
+        onClose={() => setShowAudioUpload(false)}
+        preselectedCourseId={preselectedCourseId}
+      />
+      
+      <CourseCreation 
+        opened={showCourseCreation} 
+        onClose={() => setShowCourseCreation(false)}
+      />
     </Container>
   );
 }

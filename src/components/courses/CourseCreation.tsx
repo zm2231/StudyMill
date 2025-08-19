@@ -58,11 +58,13 @@ const PRESET_COLORS = [
 ];
 
 const COMMON_SEMESTERS = [
-  'Spring 2025',
-  'Summer 2025', 
   'Fall 2025',
-  'Winter 2025',
-  'Spring 2026'
+  'Spring 2026',
+  'Summer 2026', 
+  'Fall 2026',
+  'Spring 2027',
+  'Summer 2027',
+  'Fall 2027'
 ];
 
 export function CourseCreation({ opened, onClose, editingCourse }: CourseCreationProps) {
@@ -80,7 +82,7 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
     semester: {
       startDate: '',
       endDate: '',
-      name: 'Spring 2025'
+      name: 'Fall 2025'
     }
   });
 
@@ -186,7 +188,7 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
       semester: {
         startDate: '',
         endDate: '',
-        name: 'Spring 2025'
+        name: 'Fall 2025'
       }
     });
     setScheduleForm({
@@ -305,7 +307,7 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
                 value={formData.semester.name}
                 onChange={(value) => setFormData(prev => ({
                   ...prev,
-                  semester: { ...prev.semester, name: value || 'Spring 2025' }
+                  semester: { ...prev.semester, name: value || 'Fall 2025' }
                 }))}
                 searchable
                 clearable={false}
@@ -315,14 +317,23 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
               <DateInput
                 label="Start Date"
                 placeholder="Select start date"
-                value={formData.semester.startDate ? new Date(`${formData.semester.startDate}T00:00:00`) : null}
+                value={formData.semester.startDate ? new Date(formData.semester.startDate) : null}
                 onChange={(date) => setFormData(prev => ({
                   ...prev,
                   semester: { 
                     ...prev.semester, 
-                    startDate: (date instanceof Date && !isNaN(date.getTime())) ? date.toISOString().split('T')[0] : ''
+                    startDate: date ? date.toISOString().split('T')[0] : ''
                   }
                 }))}
+                popoverProps={{
+                  withinPortal: true,
+                  position: 'bottom-start',
+                  styles: {
+                    dropdown: {
+                      minWidth: '300px'
+                    }
+                  }
+                }}
                 required
               />
             </Grid.Col>
@@ -330,14 +341,23 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
               <DateInput
                 label="End Date"
                 placeholder="Select end date"
-                value={formData.semester.endDate ? new Date(`${formData.semester.endDate}T00:00:00`) : null}
+                value={formData.semester.endDate ? new Date(formData.semester.endDate) : null}
                 onChange={(date) => setFormData(prev => ({
                   ...prev,
                   semester: { 
                     ...prev.semester, 
-                    endDate: (date instanceof Date && !isNaN(date.getTime())) ? date.toISOString().split('T')[0] : ''
+                    endDate: date ? date.toISOString().split('T')[0] : ''
                   }
                 }))}
+                popoverProps={{
+                  withinPortal: true,
+                  position: 'bottom-start',
+                  styles: {
+                    dropdown: {
+                      minWidth: '300px'
+                    }
+                  }
+                }}
                 required
               />
             </Grid.Col>
