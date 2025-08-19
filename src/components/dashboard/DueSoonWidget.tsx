@@ -3,61 +3,23 @@
 import { Card, Title, Stack, Group, Text, Button, Badge, Avatar, Progress } from '@mantine/core';
 import { IconClock, IconAlertTriangle, IconChevronRight, IconCalendarDue } from '@tabler/icons-react';
 import { format, formatDistanceToNow, isToday, isTomorrow, addDays } from 'date-fns';
+import { useEffect, useState } from 'react';
+import { useApi } from '@/lib/api';
 
 interface DueItem {
   id: string;
   title: string;
-  type: 'assignment' | 'exam' | 'quiz' | 'project' | 'reading';
+  type: 'homework' | 'test' | 'project' | 'quiz';
   course: {
     name: string;
     color: string;
     code: string;
   };
-  dueDate: Date;
+  dueDate: Date | null;
   priority: 'high' | 'medium' | 'low';
   completed?: boolean;
   progress?: number;
 }
-
-// Mock data - will be replaced with real API data
-const mockDueItems: DueItem[] = [
-  {
-    id: '1',
-    title: 'Physics Problem Set 4',
-    type: 'assignment',
-    course: { name: 'Physics 101', color: '#4A7C2A', code: 'PHYS 101' },
-    dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), // 2 days from now
-    priority: 'high',
-    progress: 60
-  },
-  {
-    id: '2',
-    title: 'Calculus Midterm Exam',
-    type: 'exam',
-    course: { name: 'Calculus II', color: '#D9B68D', code: 'MATH 152' },
-    dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), // 5 days from now
-    priority: 'high',
-    progress: 30
-  },
-  {
-    id: '3',
-    title: 'Chemistry Lab Report',
-    type: 'assignment',
-    course: { name: 'Chemistry 101', color: '#C2856B', code: 'CHEM 101' },
-    dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 1 week from now
-    priority: 'medium',
-    progress: 80
-  },
-  {
-    id: '4',
-    title: 'Chapter 5-6 Reading',
-    type: 'reading',
-    course: { name: 'Biology 101', color: '#A3C6A0', code: 'BIOL 101' },
-    dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 days from now
-    priority: 'low',
-    progress: 25
-  }
-];
 
 function getPriorityColor(priority: DueItem['priority']): string {
   switch (priority) {
@@ -70,16 +32,19 @@ function getPriorityColor(priority: DueItem['priority']): string {
 
 function getTypeIcon(type: DueItem['type']): string {
   switch (type) {
-    case 'exam': return '📝';
+    case 'test': return '📝';
     case 'quiz': return '❓';
-    case 'assignment': return '📋';
+    case 'homework': return '📋';
     case 'project': return '🎯';
-    case 'reading': return '📖';
     default: return '📄';
   }
 }
 
-function getDueDateText(dueDate: Date): { text: string; urgent: boolean } {
+function getDueDateText(dueDate: Date | null): { text: string; urgent: boolean } {
+  if (!dueDate) {
+    return { text: 'No due date', urgent: false };
+  }
+  
   if (isToday(dueDate)) {
     return { text: 'Due today', urgent: true };
   } else if (isTomorrow(dueDate)) {
@@ -92,12 +57,31 @@ function getDueDateText(dueDate: Date): { text: string; urgent: boolean } {
 }
 
 export function DueSoonWidget() {
-  const sortedItems = mockDueItems
-    .filter(item => !item.completed)
-    .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
-    .slice(0, 4); // Show max 4 items
+  const [dueItems, setDueItems] = useState<DueItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const api = useApi();
 
-  const urgentCount = sortedItems.filter(item => 
+  useEffect(() => {
+    const fetchDueAssignments = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const response = await api.getDueAssignments({ days: 7, limit: 4 });
+        setDueItems(response.assignments);
+      } catch (err: any) {
+        console.error('Failed to fetch due assignments:', err);
+        setError('Failed to load assignments');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDueAssignments();
+  }, [api]);
+
+  const urgentCount = dueItems.filter(item => 
     getDueDateText(item.dueDate).urgent
   ).length;
 
@@ -119,14 +103,22 @@ export function DueSoonWidget() {
           </Button>
         </Group>
 
-        {sortedItems.length === 0 ? (
+        {loading ? (
+          <Stack align="center" py="md">
+            <Text size="sm" c="dimmed">Loading assignments...</Text>
+          </Stack>
+        ) : error ? (
+          <Stack align="center" py="md">
+            <Text size="sm" c="red">{error}</Text>
+          </Stack>
+        ) : dueItems.length === 0 ? (
           <Stack align="center" py="md">
             <Text size="sm" c="dimmed">Nothing due soon</Text>
             <Text size="xs" c="dimmed">You're all caught up!</Text>
           </Stack>
         ) : (
           <Stack gap="sm">
-            {sortedItems.map((item) => {
+            {dueItems.map((item) => {
               const { text: dueDateText, urgent } = getDueDateText(item.dueDate);
               
               return (

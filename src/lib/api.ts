@@ -724,6 +724,148 @@ class ApiClient {
     return this.request(`/api/v1/documents/jobs/${jobId}/status`);
   }
 
+  // Assignment management endpoints
+  async getAssignments(options?: {
+    courseId?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    success: boolean;
+    assignments: Array<{
+      id: string;
+      title: string;
+      description?: string;
+      type: 'homework' | 'test' | 'project' | 'quiz';
+      course: {
+        id: string;
+        name: string;
+        color: string;
+        code: string;
+      };
+      dueDate: Date | null;
+      status: 'pending' | 'in_progress' | 'completed' | 'overdue';
+      priority: 'high' | 'medium' | 'low';
+      createdAt: Date;
+      updatedAt: Date;
+    }>;
+    pagination: {
+      total: number;
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
+  }> {
+    const searchParams = new URLSearchParams();
+    if (options?.courseId) searchParams.set('courseId', options.courseId);
+    if (options?.status) searchParams.set('status', options.status);
+    if (options?.limit) searchParams.set('limit', options.limit.toString());
+    if (options?.offset) searchParams.set('offset', options.offset.toString());
+    
+    const query = searchParams.toString();
+    return this.request(`/api/v1/assignments${query ? `?${query}` : ''}`);
+  }
+
+  async getDueAssignments(options?: {
+    days?: number;
+    limit?: number;
+  }): Promise<{
+    success: boolean;
+    assignments: Array<{
+      id: string;
+      title: string;
+      type: 'homework' | 'test' | 'project' | 'quiz';
+      course: {
+        name: string;
+        color: string;
+        code: string;
+      };
+      dueDate: Date | null;
+      priority: 'high' | 'medium' | 'low';
+      completed: boolean;
+      progress: number;
+    }>;
+  }> {
+    const searchParams = new URLSearchParams();
+    if (options?.days) searchParams.set('days', options.days.toString());
+    if (options?.limit) searchParams.set('limit', options.limit.toString());
+    
+    const query = searchParams.toString();
+    return this.request(`/api/v1/assignments/due${query ? `?${query}` : ''}`);
+  }
+
+  async getAssignmentStats(): Promise<{
+    success: boolean;
+    stats: {
+      total: number;
+      pending: number;
+      inProgress: number;
+      completed: number;
+      overdue: number;
+      dueToday: number;
+      dueTomorrow: number;
+      dueThisWeek: number;
+    };
+  }> {
+    return this.request('/api/v1/assignments/stats');
+  }
+
+  async createAssignment(data: {
+    courseId: string;
+    title: string;
+    description?: string;
+    dueDate?: string;
+    assignmentType?: 'homework' | 'test' | 'project' | 'quiz';
+    status?: 'pending' | 'in_progress' | 'completed' | 'overdue';
+  }): Promise<{
+    success: boolean;
+    assignment: any;
+  }> {
+    return this.request('/api/v1/assignments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getAssignment(id: string): Promise<{
+    success: boolean;
+    assignment: any;
+  }> {
+    return this.request(`/api/v1/assignments/${id}`);
+  }
+
+  async updateAssignment(id: string, data: {
+    title?: string;
+    description?: string;
+    dueDate?: string;
+    assignmentType?: 'homework' | 'test' | 'project' | 'quiz';
+    status?: 'pending' | 'in_progress' | 'completed' | 'overdue';
+  }): Promise<{
+    success: boolean;
+    assignment: any;
+  }> {
+    return this.request(`/api/v1/assignments/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAssignment(id: string): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    return this.request(`/api/v1/assignments/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getCourseAssignments(courseId: string): Promise<{
+    success: boolean;
+    assignments: any[];
+  }> {
+    return this.request(`/api/v1/assignments/course/${courseId}`);
+  }
+
   // Health check
   async healthCheck(): Promise<{ message: string; status: string; timestamp: string }> {
     return this.request('/');

@@ -9,6 +9,7 @@ import { VectorService } from '../services/vector';
 import { SemanticSearchService } from '../services/semanticSearch';
 import { createAudioProcessor, AudioProcessor } from '../services/audioProcessor';
 import { EnhancedMemoryService } from '../services/enhancedMemory';
+import { AssignmentService } from '../services/assignment';
 import { memoryRoutes } from './memories';
 
 export const apiRoutes = new Hono();
@@ -1209,51 +1210,234 @@ searchRoutes.get('/analytics', async (c) => {
 const assignmentsRoutes = new Hono();
 
 assignmentsRoutes.get('/', async (c) => {
-  // TODO: Get user assignments from D1
-  return c.json({
-    message: 'Get assignments endpoint - coming soon',
-    assignments: []
-  });
+  try {
+    const userId = c.get('userId');
+    const courseId = c.req.query('courseId');
+    const status = c.req.query('status');
+    const limit = parseInt(c.req.query('limit') || '50');
+    const offset = parseInt(c.req.query('offset') || '0');
+    
+    const dbService = new DatabaseService(c.env.DB);
+    const assignmentService = new AssignmentService(dbService);
+    
+    const { assignments, total } = await assignmentService.getUserAssignments(
+      userId,
+      courseId || undefined,
+      status || undefined,
+      limit,
+      offset
+    );
+    
+    // Transform for frontend compatibility
+    const transformedAssignments = assignments.map((assignment: any) => ({
+      id: assignment.id,
+      title: assignment.title,
+      description: assignment.description,
+      type: assignment.assignment_type,
+      course: {
+        id: assignment.course_id,
+        name: assignment.course_name || 'Unknown Course',
+        color: '#4A7C2A', // Default color, TODO: get from courses table
+        code: assignment.course_name || 'COURSE'
+      },
+      dueDate: assignment.due_date ? new Date(assignment.due_date) : null,
+      status: assignment.status,
+      priority: assignment.status === 'overdue' ? 'high' : 
+               assignment.due_date && new Date(assignment.due_date).getTime() - Date.now() < 3 * 24 * 60 * 60 * 1000 ? 'high' :
+               assignment.due_date && new Date(assignment.due_date).getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000 ? 'medium' : 'low',
+      createdAt: new Date(assignment.created_at),
+      updatedAt: new Date(assignment.updated_at)
+    }));
+    
+    return c.json({
+      success: true,
+      assignments: transformedAssignments,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: total > offset + limit
+      }
+    });
+  } catch (error) {
+    console.error('Get assignments error:', error);
+    throw error;
+  }
+});
+
+assignmentsRoutes.get('/due', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const days = parseInt(c.req.query('days') || '7');
+    const limit = parseInt(c.req.query('limit') || '10');
+    
+    const dbService = new DatabaseService(c.env.DB);
+    const assignmentService = new AssignmentService(dbService);
+    
+    const assignments = await assignmentService.getDueAssignments(userId, days, limit);
+    
+    // Transform for frontend compatibility
+    const transformedAssignments = assignments.map((assignment: any) => ({
+      id: assignment.id,
+      title: assignment.title,
+      type: assignment.assignment_type,
+      course: {
+        name: assignment.course_name || 'Unknown Course',
+        color: '#4A7C2A',
+        code: assignment.course_name || 'COURSE'
+      },
+      dueDate: assignment.due_date ? new Date(assignment.due_date) : null,
+      priority: assignment.status === 'overdue' ? 'high' : 
+               assignment.due_date && new Date(assignment.due_date).getTime() - Date.now() < 3 * 24 * 60 * 60 * 1000 ? 'high' : 'medium',
+      completed: assignment.status === 'completed',
+      progress: assignment.status === 'completed' ? 100 : 
+                assignment.status === 'in_progress' ? 50 : 0
+    }));
+    
+    return c.json({
+      success: true,
+      assignments: transformedAssignments
+    });
+  } catch (error) {
+    console.error('Get due assignments error:', error);
+    throw error;
+  }
+});
+
+assignmentsRoutes.get('/stats', async (c) => {
+  try {
+    const userId = c.get('userId');
+    
+    const dbService = new DatabaseService(c.env.DB);
+    const assignmentService = new AssignmentService(dbService);
+    
+    const stats = await assignmentService.getAssignmentStats(userId);
+    
+    return c.json({
+      success: true,
+      stats
+    });
+  } catch (error) {
+    console.error('Get assignment stats error:', error);
+    throw error;
+  }
 });
 
 assignmentsRoutes.post('/', async (c) => {
   try {
-    const { courseId, title, description, dueDate, assignmentType } = await c.req.json();
+    const userId = c.get('userId');
+    const { courseId, title, description, dueDate, assignmentType, status } = await c.req.json();
     
     if (!courseId || !title) {
       createError('Course ID and title are required', 400);
     }
 
-    // TODO: Create assignment in D1
+    const dbService = new DatabaseService(c.env.DB);
+    const assignmentService = new AssignmentService(dbService);
+    
+    const assignment = await assignmentService.createAssignment(userId, courseId, {
+      title,
+      description,
+      dueDate,
+      assignmentType,
+      status
+    });
+    
     return c.json({
-      message: 'Create assignment endpoint - coming soon',
-      assignment: { courseId, title, description, dueDate, assignmentType }
+      success: true,
+      assignment
     }, 201);
   } catch (error) {
+    console.error('Create assignment error:', error);
+    throw error;
+  }
+});
+
+assignmentsRoutes.get('/:id', async (c) => {
+  try {
+    const assignmentId = c.req.param('id');
+    const userId = c.get('userId');
+    
+    const dbService = new DatabaseService(c.env.DB);
+    const assignmentService = new AssignmentService(dbService);
+    
+    const assignment = await assignmentService.getAssignment(assignmentId, userId);
+    
+    return c.json({
+      success: true,
+      assignment
+    });
+  } catch (error) {
+    console.error('Get assignment error:', error);
     throw error;
   }
 });
 
 assignmentsRoutes.put('/:id', async (c) => {
-  const id = c.req.param('id');
-  const updates = await c.req.json();
-  
-  // TODO: Update assignment in D1
-  return c.json({
-    message: 'Update assignment endpoint - coming soon',
-    assignmentId: id,
-    updates
-  });
+  try {
+    const assignmentId = c.req.param('id');
+    const userId = c.get('userId');
+    const updates = await c.req.json();
+    
+    const dbService = new DatabaseService(c.env.DB);
+    const assignmentService = new AssignmentService(dbService);
+    
+    const assignment = await assignmentService.updateAssignment(assignmentId, userId, {
+      title: updates.title,
+      description: updates.description,
+      dueDate: updates.dueDate,
+      assignmentType: updates.assignmentType,
+      status: updates.status
+    });
+    
+    return c.json({
+      success: true,
+      assignment
+    });
+  } catch (error) {
+    console.error('Update assignment error:', error);
+    throw error;
+  }
 });
 
 assignmentsRoutes.delete('/:id', async (c) => {
-  const id = c.req.param('id');
-  
-  // TODO: Delete assignment from D1
-  return c.json({
-    message: 'Delete assignment endpoint - coming soon',
-    assignmentId: id
-  });
+  try {
+    const assignmentId = c.req.param('id');
+    const userId = c.get('userId');
+    
+    const dbService = new DatabaseService(c.env.DB);
+    const assignmentService = new AssignmentService(dbService);
+    
+    await assignmentService.deleteAssignment(assignmentId, userId);
+    
+    return c.json({
+      success: true,
+      message: 'Assignment deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete assignment error:', error);
+    throw error;
+  }
+});
+
+assignmentsRoutes.get('/course/:courseId', async (c) => {
+  try {
+    const courseId = c.req.param('courseId');
+    const userId = c.get('userId');
+    
+    const dbService = new DatabaseService(c.env.DB);
+    const assignmentService = new AssignmentService(dbService);
+    
+    const assignments = await assignmentService.getCourseAssignments(courseId, userId);
+    
+    return c.json({
+      success: true,
+      assignments
+    });
+  } catch (error) {
+    console.error('Get course assignments error:', error);
+    throw error;
+  }
 });
 
 // Audio routes
