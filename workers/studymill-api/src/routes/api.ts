@@ -10,6 +10,7 @@ import { SemanticSearchService } from '../services/semanticSearch';
 import { createAudioProcessor, AudioProcessor } from '../services/audioProcessor';
 import { EnhancedMemoryService } from '../services/enhancedMemory';
 import { AssignmentService } from '../services/assignment';
+import { ActivityService } from '../services/activity';
 import { memoryRoutes } from './memories';
 
 export const apiRoutes = new Hono();
@@ -1802,6 +1803,138 @@ flashcardsRoutes.get('/due', async (c) => {
   });
 });
 
+// Activity routes
+const activityRoutes = new Hono();
+
+activityRoutes.get('/recent', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const limit = parseInt(c.req.query('limit') || '10');
+    const actions = c.req.query('actions')?.split(',') as any[];
+    
+    const dbService = new DatabaseService(c.env.DB);
+    const activityService = new ActivityService(dbService);
+    
+    // Initialize activity table if it doesn't exist
+    await activityService.createActivityTable();
+    
+    const activities = await activityService.getRecentActivities(userId, limit, actions);
+    
+    // Transform for frontend
+    const transformedActivities = activities.map(activity => ({
+      id: activity.id,
+      title: activity.resource_title,
+      action: activity.action,
+      type: activity.resource_type,
+      course: activity.course_id ? {
+        id: activity.course_id,
+        name: activity.course_name || 'Unknown Course',
+        color: activity.course_color || '#4A7C2A',
+        code: activity.course_code || 'COURSE'
+      } : undefined,
+      timestamp: new Date(activity.created_at),
+      metadata: activity.metadata ? JSON.parse(activity.metadata) : {}
+    }));
+    
+    return c.json({
+      success: true,
+      activities: transformedActivities
+    });
+  } catch (error) {
+    console.error('Get recent activities error:', error);
+    throw error;
+  }
+});
+
+activityRoutes.get('/recent-items', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const limit = parseInt(c.req.query('limit') || '5');
+    
+    const dbService = new DatabaseService(c.env.DB);
+    const activityService = new ActivityService(dbService);
+    
+    // Initialize activity table if it doesn't exist
+    await activityService.createActivityTable();
+    
+    const recentItems = await activityService.getRecentlyAccessedItems(userId, limit);
+    
+    return c.json({
+      success: true,
+      recentItems
+    });
+  } catch (error) {
+    console.error('Get recent items error:', error);
+    throw error;
+  }
+});
+
+activityRoutes.get('/stats', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const days = parseInt(c.req.query('days') || '7');
+    
+    const dbService = new DatabaseService(c.env.DB);
+    const activityService = new ActivityService(dbService);
+    
+    // Initialize activity table if it doesn't exist
+    await activityService.createActivityTable();
+    
+    const stats = await activityService.getActivityStats(userId, days);
+    
+    return c.json({
+      success: true,
+      stats
+    });
+  } catch (error) {
+    console.error('Get activity stats error:', error);
+    throw error;
+  }
+});
+
+activityRoutes.post('/log', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const { 
+      action, 
+      resourceType, 
+      resourceId, 
+      resourceTitle, 
+      courseId, 
+      courseName, 
+      courseColor, 
+      courseCode, 
+      metadata 
+    } = await c.req.json();
+    
+    if (!action || !resourceType || !resourceId || !resourceTitle) {
+      createError('Missing required fields: action, resourceType, resourceId, resourceTitle', 400);
+    }
+    
+    const dbService = new DatabaseService(c.env.DB);
+    const activityService = new ActivityService(dbService);
+    
+    // Initialize activity table if it doesn't exist
+    await activityService.createActivityTable();
+    
+    await activityService.logActivity(userId, action, resourceType, resourceId, resourceTitle, {
+      courseId,
+      courseName,
+      courseColor,
+      courseCode,
+      metadata
+    });
+    
+    return c.json({
+      success: true,
+      message: 'Activity logged successfully'
+    });
+  } catch (error) {
+    console.error('Log activity error:', error);
+    throw error;
+  }
+});
+
 // Mount protected routes (after auth middleware)
 apiRoutes.route('/courses', coursesRoutes);
 apiRoutes.route('/documents', documentsRoutes);
@@ -1811,3 +1944,4 @@ apiRoutes.route('/chat', chatRoutes);
 apiRoutes.route('/search', searchRoutes);
 apiRoutes.route('/assignments', assignmentsRoutes);
 apiRoutes.route('/flashcards', flashcardsRoutes);
+apiRoutes.route('/activity', activityRoutes);
