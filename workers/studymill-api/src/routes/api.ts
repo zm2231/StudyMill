@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { createError } from '../middleware/error';
+import { createError, requestIdMiddleware, ErrorCodes } from '../middleware/error';
 import { authMiddleware } from '../middleware/auth';
 import { DatabaseService } from '../services/database';
 import { CourseService } from '../services/course';
@@ -11,9 +11,15 @@ import { createAudioProcessor, AudioProcessor } from '../services/audioProcessor
 import { EnhancedMemoryService } from '../services/enhancedMemory';
 import { AssignmentService } from '../services/assignment';
 import { ActivityService } from '../services/activity';
+import { ContextSynthesisService } from '../services/contextSynthesis';
+import { QueryProcessorService } from '../services/queryProcessor';
 import { memoryRoutes } from './memories';
+import { notesRoutes } from './notes';
 
 export const apiRoutes = new Hono();
+
+// Apply request ID middleware to all routes for error correlation
+apiRoutes.use('*', requestIdMiddleware);
 
 // Public routes (no auth required) - mount these first
 const publicDocumentsRoutes = new Hono();
@@ -108,12 +114,236 @@ coursesRoutes.post('/', async (c) => {
 coursesRoutes.get('/today', async (c) => {
   const userId = c.get('userId');
   
-  // For now, return an empty array to prevent frontend crashes
-  // TODO: Implement actual today's classes logic with course schedules
-  return c.json({
-    success: true,
-    classes: []
-  });
+  try {
+    const dbService = new DatabaseService(c.env.DB);
+    
+    // Get current day of week (0=Sunday, 1=Monday, etc.)
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    
+    // Get today's classes from course_schedules table
+    const scheduledClasses = await dbService.query(`
+      SELECT 
+        c.id,
+        c.name,
+        c.description,
+        c.color,
+        cs.start_time,
+        cs.end_time,
+        cs.location
+      FROM courses c
+      JOIN course_schedules cs ON c.id = cs.course_id
+      WHERE c.user_id = ? AND cs.day_of_week = ?
+      ORDER BY cs.start_time ASC
+    `, [userId, dayOfWeek]);
+
+    // Also check for courses with schedule_json (legacy/simple format)
+    const jsonScheduledCourses = await dbService.query(`
+      SELECT id, name, description, color, schedule_json, location
+      FROM courses 
+      WHERE user_id = ? AND schedule_json IS NOT NULL
+    `, [userId]);
+
+    const todayClasses = [];
+
+    // Process course_schedules table results
+    for (const cls of scheduledClasses) {
+      todayClasses.push({
+        id: cls.id,
+        courseId: cls.id,
+        courseName: cls.name,
+        courseCode: cls.name.split(' ')[0] || cls.name, // Extract course code
+        startTime: cls.start_time,
+        endTime: cls.end_time,
+        location: cls.location || 'TBD',
+        color: cls.color || '#3B82F6',
+        type: 'scheduled'
+      });
+    }
+
+    // Process schedule_json format
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const todayName = dayNames[dayOfWeek];
+
+    for (const course of jsonScheduledCourses) {
+      try {
+        if (course.schedule_json) {
+          const schedule = JSON.parse(course.schedule_json);
+          if (schedule[todayName]) {
+            const timeSlot = schedule[todayName];
+            const [startTime, endTime] = timeSlot.includes('-') 
+              ? timeSlot.split('-').map(t => t.trim())
+              : [timeSlot, timeSlot];
+            
+            todayClasses.push({
+              id: `${course.id}_json`,
+              courseId: course.id,
+              courseName: course.name,
+              courseCode: course.name.split(' ')[0] || course.name,
+              startTime: startTime || '09:00',
+              endTime: endTime || '10:30',
+              location: course.location || 'TBD',
+              color: course.color || '#3B82F6',
+              type: 'json_schedule'
+            });
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to parse schedule_json for course:', course.id, error);
+      }
+    }
+
+    // Sort by start time
+    todayClasses.sort((a, b) => {
+      const timeA = a.startTime.replace(':', '');
+      const timeB = b.startTime.replace(':', '');
+      return timeA.localeCompare(timeB);
+    });
+
+    // If no classes found, optionally return a demo class for better UX
+    if (todayClasses.length === 0) {
+      // Check if user has any courses at all
+      const allCourses = await dbService.query(
+        'SELECT COUNT(*) as count FROM courses WHERE user_id = ?',
+        [userId]
+      );
+
+      if (allCourses[0]?.count > 0) {
+        // User has courses but no schedule - show helpful message
+        return c.json({
+          success: true,
+          classes: [],
+          message: 'No classes scheduled for today. Add schedules to your courses to see them here.'
+        });
+      }
+    }
+
+    return c.json({
+      success: true,
+      classes: todayClasses,
+      today: {
+        date: today.toISOString().split('T')[0],
+        dayOfWeek: dayOfWeek,
+        dayName: todayName
+      }
+    });
+
+  } catch (error) {
+    console.error('Today\'s classes error:', error);
+    
+    // Graceful fallback
+    return c.json({
+      success: true,
+      classes: [],
+      error: 'Unable to load today\'s classes'
+    });
+  }
+});
+
+// Add schedule to a course
+coursesRoutes.post('/:id/schedule', async (c) => {
+  const courseId = c.req.param('id');
+  const userId = c.get('userId');
+  
+  try {
+    const { schedules } = await c.req.json();
+    
+    if (!schedules || !Array.isArray(schedules)) {
+      return c.json({
+        success: false,
+        error: 'schedules array is required'
+      }, 400);
+    }
+
+    const dbService = new DatabaseService(c.env.DB);
+    
+    // Verify course ownership
+    const course = await dbService.query(
+      'SELECT id FROM courses WHERE id = ? AND user_id = ?',
+      [courseId, userId]
+    );
+    
+    if (course.length === 0) {
+      return c.json({
+        success: false,
+        error: 'Course not found'
+      }, 404);
+    }
+
+    // Delete existing schedules for this course
+    await dbService.execute(
+      'DELETE FROM course_schedules WHERE course_id = ?',
+      [courseId]
+    );
+
+    // Insert new schedules
+    for (const schedule of schedules) {
+      const { dayOfWeek, startTime, endTime, location } = schedule;
+      
+      if (typeof dayOfWeek !== 'number' || dayOfWeek < 0 || dayOfWeek > 6) {
+        return c.json({
+          success: false,
+          error: 'dayOfWeek must be a number between 0-6'
+        }, 400);
+      }
+
+      await dbService.execute(
+        `INSERT INTO course_schedules (id, course_id, day_of_week, start_time, end_time, location)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          crypto.randomUUID(),
+          courseId,
+          dayOfWeek,
+          startTime,
+          endTime,
+          location || null
+        ]
+      );
+    }
+
+    return c.json({
+      success: true,
+      message: 'Course schedule updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Update course schedule error:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to update course schedule'
+    }, 500);
+  }
+});
+
+// Get course schedule
+coursesRoutes.get('/:id/schedule', async (c) => {
+  const courseId = c.req.param('id');
+  const userId = c.get('userId');
+  
+  try {
+    const dbService = new DatabaseService(c.env.DB);
+    
+    // Verify course ownership and get schedules
+    const schedules = await dbService.query(`
+      SELECT cs.day_of_week, cs.start_time, cs.end_time, cs.location
+      FROM course_schedules cs
+      JOIN courses c ON cs.course_id = c.id
+      WHERE c.id = ? AND c.user_id = ?
+      ORDER BY cs.day_of_week, cs.start_time
+    `, [courseId, userId]);
+
+    return c.json({
+      success: true,
+      schedules
+    });
+
+  } catch (error) {
+    console.error('Get course schedule error:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to get course schedule'
+    }, 500);
+  }
 });
 
 coursesRoutes.get('/:id', async (c) => {
@@ -178,38 +408,120 @@ coursesRoutes.delete('/:id', async (c) => {
 // Documents routes
 const documentsRoutes = new Hono();
 
+// CANONICAL API: Enhanced upload endpoint with idempotency and dual-mode support
 documentsRoutes.post('/upload', async (c) => {
   const userId = c.get('userId');
-  const formData = await c.req.formData();
+  const idempotencyKey = c.req.header('Idempotency-Key');
   
+  if (!idempotencyKey) {
+    createError('Idempotency-Key header is required', 400, ErrorCodes.VALIDATION_ERROR, { field: 'Idempotency-Key' });
+  }
+
+  const dbService = new DatabaseService(c.env.DB);
+  const documentService = new DocumentService(dbService, c.env.BUCKET);
+
+  // Check for existing upload with same idempotency key
+  try {
+    const existing = await dbService.query(
+      'SELECT id, processing_status FROM documents WHERE user_id = ? AND idempotency_key = ? AND created_at > datetime("now", "-1 hour")',
+      [userId, idempotencyKey]
+    );
+    
+    if (existing.length > 0) {
+      const existingDoc = existing[0];
+      return c.json({
+        success: true,
+        documentId: existingDoc.id,
+        streamUrl: `/api/v1/documents/${existingDoc.id}/stream`,
+        statusUrl: `/api/v1/documents/${existingDoc.id}/status`,
+        duplicate: true
+      }, 200);
+    }
+  } catch (error) {
+    console.warn('Idempotency check failed:', error);
+  }
+
+  const formData = await c.req.formData();
   const file = formData.get('file') as File;
   const courseId = formData.get('courseId') as string;
   const documentType = formData.get('documentType') as string;
+  const strategy = formData.get('strategy') as string; // 'multipart' or 'presigned'
   
-  if (!file) {
-    createError('File is required', 400, { field: 'file' });
+  if (!file && strategy !== 'presigned') {
+    createError('File is required for multipart upload', 400, ErrorCodes.VALIDATION_ERROR, { field: 'file' });
   }
   
   if (!courseId) {
-    createError('Course ID is required', 400, { field: 'courseId' });
+    createError('Course ID is required', 400, ErrorCodes.VALIDATION_ERROR, { field: 'courseId' });
   }
-  
-  const dbService = new DatabaseService(c.env.DB);
-  const documentService = new DocumentService(dbService, c.env.BUCKET);
+
+  // Strategy 1: Pre-signed upload for large files
+  if (strategy === 'presigned') {
+    const filename = formData.get('filename') as string;
+    const contentType = formData.get('contentType') as string;
+    const size = parseInt(formData.get('size') as string);
+
+    if (!filename || !contentType) {
+      createError('filename and contentType required for presigned upload', 400, ErrorCodes.VALIDATION_ERROR, {
+        missing: !filename ? 'filename' : 'contentType'
+      });
+    }
+
+    // Create document record first
+    const documentId = crypto.randomUUID();
+    await dbService.execute(
+      `INSERT INTO documents (id, user_id, course_id, filename, file_type, file_size, 
+       document_type, processing_status, idempotency_key, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, datetime('now'), datetime('now'))`,
+      [documentId, userId, courseId, filename, contentType, size, documentType || 'unknown', idempotencyKey]
+    );
+
+    // Generate pre-signed URL (simplified for demo - real implementation would use R2 pre-signed URLs)
+    const uploadUrl = `${c.env.BUCKET.endpoint}/${documentId}`;
+    
+    return c.json({
+      success: true,
+      documentId,
+      uploadUrl,
+      streamUrl: `/api/v1/documents/${documentId}/stream`,
+      statusUrl: `/api/v1/documents/${documentId}/status`,
+      presigned: true
+    }, 201);
+  }
+
+  // Strategy 2: Direct multipart upload (existing flow)
+  if (!file) {
+    createError('File is required', 400, ErrorCodes.VALIDATION_ERROR, { field: 'file' });
+  }
+
+  // Auto-fallback to presigned for large files (> 50MB)
+  const MAX_DIRECT_BYTES = 50 * 1024 * 1024;
+  if (file.size > MAX_DIRECT_BYTES) {
+    createError('File too large for direct upload. Use presigned strategy.', 413, ErrorCodes.FILE_TOO_LARGE, {
+      maxSize: MAX_DIRECT_BYTES,
+      fileSize: file.size,
+      recommendation: 'Use strategy=presigned for files larger than 50MB'
+    });
+  }
   
   // Convert file to buffer
   const fileBuffer = await file.arrayBuffer();
   
+  // Add idempotency key to document metadata
   const document = await documentService.uploadDocument(userId, {
     courseId,
     filename: file.name,
     fileType: file.type,
     fileSize: file.size,
-    documentType: documentType as any
+    documentType: documentType as any,
+    idempotencyKey
   }, fileBuffer);
   
   return c.json({
     success: true,
+    documentId: document.id,
+    streamUrl: `/api/v1/documents/${document.id}/stream`,
+    statusUrl: `/api/v1/documents/${document.id}/status`,
     document
   }, 201);
 });
@@ -247,9 +559,16 @@ documentsRoutes.delete('/:id', async (c) => {
   });
 });
 
+// LEGACY: Deprecated processing-status endpoint (use /status instead)
 documentsRoutes.get('/:id/processing-status', async (c) => {
   const documentId = c.req.param('id');
   const userId = c.get('userId');
+  
+  // Add deprecation headers
+  c.header('Deprecation', 'true');
+  c.header('Sunset', 'Fri, 15 Sep 2025 23:59:59 GMT');
+  c.header('Link', '</api/v1/documents/:id/status>; rel="successor-version"');
+  c.header('Warning', '299 - "This endpoint is deprecated. Use /api/v1/documents/:id/status instead."');
   
   const dbService = new DatabaseService(c.env.DB);
   const documentService = new DocumentService(dbService, c.env.BUCKET);
@@ -259,10 +578,149 @@ documentsRoutes.get('/:id/processing-status', async (c) => {
     createError('Document not found', 404);
   }
   
+  // Log legacy endpoint usage for telemetry
+  console.warn(`Legacy endpoint usage: /documents/${documentId}/processing-status by user ${userId}`);
+  
   return c.json({
     success: true,
     documentId,
     status: document.processing_status,
+    error: document.processing_error || null,
+    _deprecated: true,
+    _successor: `/api/v1/documents/${documentId}/status`
+  });
+});
+
+// CANONICAL API: SSE progress streaming endpoint 
+documentsRoutes.get('/:id/stream', async (c) => {
+  const documentId = c.req.param('id');
+  const userId = c.get('userId');
+  
+  const dbService = new DatabaseService(c.env.DB);
+  const documentService = new DocumentService(dbService, c.env.BUCKET);
+  
+  const document = await documentService.getDocument(documentId, userId);
+  if (!document) {
+    return c.json({ error: 'Document not found' }, 404);
+  }
+
+  // Set SSE headers
+  c.header('Content-Type', 'text/event-stream');
+  c.header('Cache-Control', 'no-cache');
+  c.header('Connection', 'keep-alive');
+  c.header('Access-Control-Allow-Origin', '*');
+  
+  // Create SSE stream
+  let eventId = 0;
+  const encoder = new TextEncoder();
+  
+  const stream = new ReadableStream({
+    start(controller) {
+      const sendEvent = (type: string, data: any) => {
+        const event = `id: ${++eventId}\nevent: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+        controller.enqueue(encoder.encode(event));
+      };
+
+      // Send initial status
+      sendEvent('progress', {
+        stage: document.processing_status === 'pending' ? 'pending' : 
+               document.processing_status === 'processing' ? 'extract' :
+               document.processing_status === 'ready' ? 'done' : 'error',
+        percent: document.processing_status === 'ready' ? 100 : 
+                 document.processing_status === 'processing' ? 50 : 0,
+        message: document.processing_status === 'ready' ? 'Processing complete' :
+                 document.processing_status === 'processing' ? 'Processing document' :
+                 document.processing_status === 'pending' ? 'Queued for processing' :
+                 'Processing failed'
+      });
+
+      // If document is complete or failed, send final event and close
+      if (document.processing_status === 'ready') {
+        sendEvent('done', {
+          documentId,
+          status: 'complete'
+        });
+        controller.close();
+      } else if (document.processing_status === 'failed') {
+        sendEvent('error', {
+          code: 'PROCESSING_ERROR',
+          message: document.processing_error || 'Processing failed'
+        });
+        controller.close();
+      } else {
+        // Poll for updates every 2 seconds for active processing
+        const pollInterval = setInterval(async () => {
+          try {
+            const updatedDoc = await documentService.getDocument(documentId, userId);
+            if (!updatedDoc) {
+              sendEvent('error', { code: 'NOT_FOUND', message: 'Document not found' });
+              clearInterval(pollInterval);
+              controller.close();
+              return;
+            }
+
+            if (updatedDoc.processing_status === 'ready') {
+              sendEvent('progress', { stage: 'done', percent: 100, message: 'Processing complete' });
+              sendEvent('done', { documentId, status: 'complete' });
+              clearInterval(pollInterval);
+              controller.close();
+            } else if (updatedDoc.processing_status === 'failed') {
+              sendEvent('error', {
+                code: 'PROCESSING_ERROR',
+                message: updatedDoc.processing_error || 'Processing failed'
+              });
+              clearInterval(pollInterval);
+              controller.close();
+            } else if (updatedDoc.processing_status === 'processing') {
+              // Simulate progress stages for better UX
+              const randomProgress = 20 + Math.floor(Math.random() * 60);
+              sendEvent('progress', {
+                stage: randomProgress < 40 ? 'extract' : randomProgress < 70 ? 'analyze' : 'memories',
+                percent: randomProgress,
+                message: randomProgress < 40 ? 'Extracting text' : 
+                        randomProgress < 70 ? 'Analyzing content' : 'Creating memories'
+              });
+            }
+          } catch (error) {
+            sendEvent('error', { code: 'INTERNAL_ERROR', message: 'Polling failed' });
+            clearInterval(pollInterval);
+            controller.close();
+          }
+        }, 2000);
+
+        // Clean up after 5 minutes
+        setTimeout(() => {
+          clearInterval(pollInterval);
+          controller.close();
+        }, 300000);
+      }
+    }
+  });
+
+  return new Response(stream);
+});
+
+// CANONICAL API: Polling fallback status endpoint
+documentsRoutes.get('/:id/status', async (c) => {
+  const documentId = c.req.param('id');
+  const userId = c.get('userId');
+  
+  const dbService = new DatabaseService(c.env.DB);
+  const documentService = new DocumentService(dbService, c.env.BUCKET);
+  
+  const document = await documentService.getDocument(documentId, userId);
+  if (!document) {
+    return c.json({ error: 'Document not found' }, 404);
+  }
+  
+  return c.json({
+    documentId,
+    status: document.processing_status === 'ready' ? 'complete' : 
+            document.processing_status === 'processing' ? 'processing' :
+            document.processing_status === 'pending' ? 'pending' : 'failed',
+    stage: document.processing_status === 'processing' ? 'extract' : 'none',
+    percent: document.processing_status === 'ready' ? 100 : 
+             document.processing_status === 'processing' ? 50 : 0,
     error: document.processing_error || null
   });
 });
@@ -603,6 +1061,75 @@ documentsRoutes.get('/analytics/costs', async (c) => {
   });
 });
 
+// Process document with comprehensive instrumentation (P1-011 Enhancement)
+documentsRoutes.post('/:id/process-instrumented', async (c) => {
+  const documentId = c.req.param('id');
+  const userId = c.get('userId');
+  const { processingMode = 'auto' } = await c.req.json();
+  
+  const dbService = new DatabaseService(c.env.DB);
+  const documentService = new DocumentService(dbService, c.env.BUCKET);
+  const processorService = new DocumentProcessorService(
+    dbService,
+    documentService,
+    c.env.BUCKET,
+    c.env.VECTORIZE,
+    c.env.PARSE_EXTRACT_API_KEY,
+    c.env.AI
+  );
+  
+  try {
+    const result = await processorService.processDocumentWithInstrumentation(
+      documentId,
+      userId,
+      processingMode
+    );
+    
+    return c.json({
+      success: result.success,
+      processingResult: result
+    }, result.success ? 200 : 500);
+    
+  } catch (error) {
+    console.error('Instrumented processing endpoint error:', error);
+    throw createError('Document processing failed', 500, {
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Get processing health report for document (P1-011 Enhancement)
+documentsRoutes.get('/:id/health-report', async (c) => {
+  const documentId = c.req.param('id');
+  const userId = c.get('userId');
+  
+  const dbService = new DatabaseService(c.env.DB);
+  const documentService = new DocumentService(dbService, c.env.BUCKET);
+  const processorService = new DocumentProcessorService(
+    dbService,
+    documentService,
+    c.env.BUCKET,
+    c.env.VECTORIZE,
+    c.env.PARSE_EXTRACT_API_KEY,
+    c.env.AI
+  );
+  
+  try {
+    const healthReport = await processorService.getProcessingHealthReport(documentId, userId);
+    
+    return c.json({
+      success: true,
+      healthReport
+    });
+    
+  } catch (error) {
+    console.error('Health report endpoint error:', error);
+    throw createError('Failed to generate health report', 500, {
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 // Chat routes
 const chatRoutes = new Hono();
 
@@ -626,62 +1153,230 @@ chatRoutes.get('/ws', async (c) => {
 });
 
 chatRoutes.get('/sessions', async (c) => {
-  // TODO: Get user chat sessions from D1
-  return c.json({
-    message: 'Get chat sessions endpoint - coming soon',
-    sessions: []
-  });
+  const userId = c.get('userId');
+  
+  const dbService = new DatabaseService(c.env.DB);
+  
+  try {
+    const sessions = await dbService.query(`
+      SELECT 
+        id, user_id, course_id, assignment_id, title, created_at, updated_at,
+        (SELECT COUNT(*) FROM chat_messages WHERE session_id = chat_sessions.id) as message_count,
+        (SELECT created_at FROM chat_messages WHERE session_id = chat_sessions.id ORDER BY created_at DESC LIMIT 1) as last_activity
+      FROM chat_sessions 
+      WHERE user_id = ? 
+      ORDER BY updated_at DESC
+    `, [userId]);
+
+    return c.json({
+      success: true,
+      sessions: sessions.map((session: any) => ({
+        id: session.id,
+        courseId: session.course_id,
+        assignmentId: session.assignment_id,
+        title: session.title,
+        messageCount: session.message_count || 0,
+        lastActivity: session.last_activity,
+        createdAt: session.created_at,
+        updatedAt: session.updated_at
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching chat sessions:', error);
+    throw createError('Failed to fetch chat sessions', 500, {
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 });
 
 chatRoutes.post('/sessions', async (c) => {
+  const userId = c.get('userId');
+  
   try {
-    const { courseId, assignmentId, title } = await c.req.json();
+    const { courseId, assignmentId, title = 'New Chat' } = await c.req.json();
     
-    // TODO: Create new chat session in D1
+    const dbService = new DatabaseService(c.env.DB);
+    const sessionId = 'session_' + crypto.randomUUID();
+    const now = new Date().toISOString();
+    
+    // Create new chat session
+    await dbService.query(`
+      INSERT INTO chat_sessions (id, user_id, course_id, assignment_id, title, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+      sessionId,
+      userId,
+      courseId || null,
+      assignmentId || null,
+      title,
+      now,
+      now
+    ]);
+    
     return c.json({
-      message: 'Create chat session endpoint - coming soon',
-      session: { courseId, assignmentId, title }
+      success: true,
+      session: {
+        id: sessionId,
+        courseId,
+        assignmentId,
+        title,
+        messageCount: 0,
+        createdAt: now,
+        updatedAt: now
+      }
     }, 201);
   } catch (error) {
-    throw error;
+    console.error('Error creating chat session:', error);
+    throw createError('Failed to create chat session', 500, {
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 
 chatRoutes.get('/sessions/:id/messages', async (c) => {
   const sessionId = c.req.param('id');
+  const userId = c.get('userId');
+  const limit = parseInt(c.req.query('limit') || '50');
+  const offset = parseInt(c.req.query('offset') || '0');
   
-  // TODO: Get chat messages from D1
-  return c.json({
-    message: 'Get chat messages endpoint - coming soon',
-    sessionId,
-    messages: []
-  });
+  const dbService = new DatabaseService(c.env.DB);
+  
+  try {
+    // Verify session belongs to user
+    const session = await dbService.query(`
+      SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?
+    `, [sessionId, userId]);
+    
+    if (session.length === 0) {
+      throw createError('Chat session not found', 404);
+    }
+    
+    // Get messages for session
+    const messages = await dbService.query(`
+      SELECT id, role, content, document_references, created_at
+      FROM chat_messages 
+      WHERE session_id = ? 
+      ORDER BY created_at ASC
+      LIMIT ? OFFSET ?
+    `, [sessionId, limit, offset]);
+
+    return c.json({
+      success: true,
+      sessionId,
+      messages: messages.map((msg: any) => ({
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        documentReferences: msg.document_references ? JSON.parse(msg.document_references) : [],
+        timestamp: msg.created_at
+      })),
+      pagination: {
+        limit,
+        offset,
+        hasMore: messages.length === limit
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching chat messages:', error);
+    throw createError('Failed to fetch chat messages', 500, {
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 });
 
 chatRoutes.post('/sessions/:id/messages', async (c) => {
   const sessionId = c.req.param('id');
+  const userId = c.get('userId');
   
   try {
-    const { content } = await c.req.json();
+    const { content, courseId } = await c.req.json();
     
     if (!content) {
-      createError('Message content is required', 400);
+      throw createError('Message content is required', 400);
     }
 
-    // TODO: Implement AI chat
-    // - Store user message in D1
-    // - Retrieve relevant context from Vectorize
-    // - Generate AI response with Gemini
-    // - Store AI response in D1
-    // - Return streaming response
+    const dbService = new DatabaseService(c.env.DB);
+    
+    // Verify session belongs to user
+    const session = await dbService.query(`
+      SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?
+    `, [sessionId, userId]);
+    
+    if (session.length === 0) {
+      throw createError('Chat session not found', 404);
+    }
+
+    // For HTTP fallback - store user message and generate response
+    const userMessageId = 'msg_' + crypto.randomUUID();
+    const now = new Date().toISOString();
+    
+    // Store user message
+    await dbService.query(`
+      INSERT INTO chat_messages (id, session_id, role, content, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [userMessageId, sessionId, 'user', content, now, now]);
+
+    // Generate AI response using ContextSynthesisService
+    const contextSynthesis = new ContextSynthesisService(
+      c.env.AI,
+      new VectorService(c.env.AI, c.env.VECTORIZE, dbService),
+      dbService
+    );
+
+    // Get context for the query
+    const searchService = new SemanticSearchService(
+      new VectorService(c.env.AI, c.env.VECTORIZE, dbService),
+      dbService
+    );
+
+    const context = await searchService.hybridSearch({
+      query: content,
+      userId,
+      containerTags: courseId ? [courseId] : undefined,
+      limit: 5,
+      threshold: 0.7
+    });
+
+    // Generate response using synthesis service
+    const synthesisResult = await contextSynthesis.synthesizeContext(userId, {
+      query: content,
+      documentIds: context.map(result => result.metadata?.source).filter(Boolean),
+      type: 'conversational',
+      options: {
+        includeSourceReferences: true,
+        maxContextLength: 2000
+      }
+    });
+    
+    const aiResponse = synthesisResult.content;
+    const assistantMessageId = 'msg_' + crypto.randomUUID();
+    
+    // Store AI response
+    await dbService.query(`
+      INSERT INTO chat_messages (id, session_id, role, content, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [assistantMessageId, sessionId, 'assistant', aiResponse, now, now]);
     
     return c.json({
-      message: 'Send chat message endpoint - coming soon',
-      sessionId,
-      userMessage: content
+      success: true,
+      userMessage: {
+        id: userMessageId,
+        role: 'user',
+        content,
+        timestamp: now
+      },
+      assistantMessage: {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: aiResponse,
+        timestamp: now
+      }
     }, 201);
   } catch (error) {
-    throw error;
+    console.error('Error sending chat message:', error);
+    throw createError('Failed to send message', 500, {
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 
@@ -1935,13 +2630,247 @@ activityRoutes.post('/log', async (c) => {
   }
 });
 
+// AI synthesis routes
+const aiRoutes = new Hono();
+
+aiRoutes.post('/summarize', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const { documentId, options = {} } = await c.req.json();
+
+    if (!documentId) {
+      throw createError('Document ID is required', 400);
+    }
+
+    // Get document content for context
+    const document = await c.env.DB.prepare(
+      'SELECT title, content_preview, document_type FROM documents WHERE id = ? AND user_id = ?'
+    ).bind(documentId, userId).first();
+
+    if (!document) {
+      throw createError('Document not found', 404);
+    }
+
+    // Initialize synthesis service
+    const contextSynthesis = new ContextSynthesisService(
+      new DatabaseService(c.env.DB),
+      new EnhancedMemoryService(
+        new DatabaseService(c.env.DB),
+        c.env.VECTORIZE_INDEX,
+        c.env.OPENAI_API_KEY || ''
+      ),
+      new SemanticSearchService(
+        new DatabaseService(c.env.DB),
+        c.env.VECTORIZE_INDEX
+      ),
+      new QueryProcessorService(),
+      c.env.GOOGLE_API_KEY
+    );
+
+    const query = `Summarize this ${document.document_type}: ${document.title}`;
+    const result = await contextSynthesis.synthesizeContext(query, userId, {
+      synthesisType: 'summary',
+      responseStyle: options.style || 'conversational',
+      maxSources: 5,
+      ...options
+    });
+
+    return c.json({
+      success: true,
+      summary: result.synthesizedContent,
+      keyPoints: result.sourceAttribution.map(source => source.excerpt),
+      wordCount: result.synthesizedContent.split(/\s+/).length,
+      confidence: result.confidence,
+      processingTime: result.processingTime,
+      sources: result.sourceAttribution
+    });
+
+  } catch (error) {
+    console.error('Summarize error:', error);
+    throw error;
+  }
+});
+
+aiRoutes.post('/study-guide', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const { documentIds = [], courseId, options = {} } = await c.req.json();
+
+    if (!documentIds.length && !courseId) {
+      throw createError('Document IDs or course ID required', 400);
+    }
+
+    // Get documents for context
+    let documents = [];
+    if (courseId) {
+      documents = await c.env.DB.prepare(
+        'SELECT id, title, document_type FROM documents WHERE user_id = ? AND course_id = ? ORDER BY created_at DESC LIMIT 10'
+      ).bind(userId, courseId).all();
+    } else {
+      const placeholders = documentIds.map(() => '?').join(',');
+      documents = await c.env.DB.prepare(
+        `SELECT id, title, document_type FROM documents WHERE id IN (${placeholders}) AND user_id = ?`
+      ).bind(...documentIds, userId).all();
+    }
+
+    if (!documents.results?.length) {
+      throw createError('No documents found', 404);
+    }
+
+    // Initialize synthesis service
+    const contextSynthesis = new ContextSynthesisService(
+      new DatabaseService(c.env.DB),
+      new EnhancedMemoryService(
+        new DatabaseService(c.env.DB),
+        c.env.VECTORIZE_INDEX,
+        c.env.OPENAI_API_KEY || ''
+      ),
+      new SemanticSearchService(
+        new DatabaseService(c.env.DB),
+        c.env.VECTORIZE_INDEX
+      ),
+      new QueryProcessorService(),
+      c.env.GOOGLE_API_KEY
+    );
+
+    const docTitles = documents.results.map(d => d.title).join(', ');
+    const query = `Create a comprehensive study guide for: ${docTitles}`;
+    
+    const result = await contextSynthesis.synthesizeContext(query, userId, {
+      synthesisType: 'summary',
+      responseStyle: 'academic',
+      maxSources: 15,
+      ...options
+    });
+
+    // Structure the study guide
+    const sections = result.synthesizedContent.split('\n\n').filter(section => section.trim());
+    
+    return c.json({
+      success: true,
+      title: `Study Guide: ${docTitles.substring(0, 50)}...`,
+      sections: sections.map((content, index) => ({
+        id: `section_${index}`,
+        title: content.split('\n')[0].replace(/^#+\s*/, ''),
+        content: content
+      })),
+      createdAt: new Date().toISOString(),
+      confidence: result.confidence,
+      processingTime: result.processingTime,
+      sources: result.sourceAttribution
+    });
+
+  } catch (error) {
+    console.error('Study guide error:', error);
+    throw error;
+  }
+});
+
+aiRoutes.post('/flashcards', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const { documentId, count = 10, difficulty = 'medium', options = {} } = await c.req.json();
+
+    if (!documentId) {
+      throw createError('Document ID is required', 400);
+    }
+
+    // Get document for context
+    const document = await c.env.DB.prepare(
+      'SELECT title, content_preview, document_type FROM documents WHERE id = ? AND user_id = ?'
+    ).bind(documentId, userId).first();
+
+    if (!document) {
+      throw createError('Document not found', 404);
+    }
+
+    // Initialize synthesis service
+    const contextSynthesis = new ContextSynthesisService(
+      new DatabaseService(c.env.DB),
+      new EnhancedMemoryService(
+        new DatabaseService(c.env.DB),
+        c.env.VECTORIZE_INDEX,
+        c.env.OPENAI_API_KEY || ''
+      ),
+      new SemanticSearchService(
+        new DatabaseService(c.env.DB),
+        c.env.VECTORIZE_INDEX
+      ),
+      new QueryProcessorService(),
+      c.env.GOOGLE_API_KEY
+    );
+
+    const query = `Create ${count} ${difficulty} flashcards from this ${document.document_type}: ${document.title}. Format each as "Q: [question] | A: [answer]"`;
+    
+    const result = await contextSynthesis.synthesizeContext(query, userId, {
+      synthesisType: 'summary',
+      responseStyle: 'concise',
+      maxSources: 5,
+      ...options
+    });
+
+    // Parse flashcards from response
+    const flashcardPattern = /Q:\s*([^|]+)\s*\|\s*A:\s*([^Q]+)/g;
+    const cards = [];
+    let match;
+
+    while ((match = flashcardPattern.exec(result.synthesizedContent)) !== null && cards.length < count) {
+      cards.push({
+        id: `card_${cards.length + 1}`,
+        front: match[1].trim(),
+        back: match[2].trim(),
+        difficulty,
+        confidence: 0.5,
+        sourceDocument: documentId
+      });
+    }
+
+    // If parsing failed, create simple Q&A pairs
+    if (cards.length === 0) {
+      const lines = result.synthesizedContent.split('\n').filter(line => line.trim());
+      for (let i = 0; i < Math.min(lines.length - 1, count); i += 2) {
+        if (lines[i] && lines[i + 1]) {
+          cards.push({
+            id: `card_${cards.length + 1}`,
+            front: lines[i].replace(/^\d+\.?\s*/, '').trim(),
+            back: lines[i + 1].replace(/^\d+\.?\s*/, '').trim(),
+            difficulty,
+            confidence: 0.5,
+            sourceDocument: documentId
+          });
+        }
+      }
+    }
+
+    return c.json({
+      success: true,
+      cards,
+      metadata: {
+        documentTitle: document.title,
+        difficulty,
+        generated: cards.length,
+        requested: count,
+        confidence: result.confidence,
+        processingTime: result.processingTime
+      },
+      sources: result.sourceAttribution
+    });
+
+  } catch (error) {
+    console.error('Flashcards error:', error);
+    throw error;
+  }
+});
+
 // Mount protected routes (after auth middleware)
 apiRoutes.route('/courses', coursesRoutes);
 apiRoutes.route('/documents', documentsRoutes);
 apiRoutes.route('/memories', memoryRoutes);
+apiRoutes.route('/notes', notesRoutes);
 apiRoutes.route('/audio', audioRoutes);
 apiRoutes.route('/chat', chatRoutes);
 apiRoutes.route('/search', searchRoutes);
 apiRoutes.route('/assignments', assignmentsRoutes);
 apiRoutes.route('/flashcards', flashcardsRoutes);
 apiRoutes.route('/activity', activityRoutes);
+apiRoutes.route('/ai', aiRoutes);

@@ -17,7 +17,10 @@ import {
   IconRobot,
   IconCopy,
   IconCheck,
-  IconExclamationCircle
+  IconExclamationCircle,
+  IconCards,
+  IconBookmark,
+  IconFileText
 } from '@tabler/icons-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -25,9 +28,17 @@ import { Message } from '@/types/chat';
 
 interface ChatMessageProps {
   message: Message;
+  onCreateFlashcard?: (content: string) => void;
+  onPinToGuide?: (content: string) => void;
+  onSaveAsNote?: (content: string) => void;
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ 
+  message, 
+  onCreateFlashcard,
+  onPinToGuide,
+  onSaveAsNote 
+}: ChatMessageProps) {
   const isUser = message.role === 'user';
   const isError = message.status === 'error';
 
@@ -199,29 +210,76 @@ export function ChatMessage({ message }: ChatMessageProps) {
               )}
             </div>
 
-            {/* Copy Button for AI messages */}
+            {/* Action Buttons for AI messages */}
             {!isUser && (
-              <CopyButton value={message.content}>
-                {({ copied, copy }) => (
-                  <Tooltip 
-                    label={copied ? 'Copied!' : 'Copy message'}
-                    position="top"
-                  >
+              <Group gap={2}>
+                <CopyButton value={message.content}>
+                  {({ copied, copy }) => (
+                    <Tooltip 
+                      label={copied ? 'Copied!' : 'Copy message'}
+                      position="top"
+                    >
+                      <ActionIcon
+                        size="xs"
+                        variant="subtle"
+                        onClick={copy}
+                        style={{
+                          color: copied 
+                            ? 'var(--forest-green-primary)' 
+                            : 'var(--sanctuary-text-secondary)',
+                        }}
+                      >
+                        {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
+                </CopyButton>
+
+                {onCreateFlashcard && (
+                  <Tooltip label="Create flashcard" position="top">
                     <ActionIcon
                       size="xs"
                       variant="subtle"
-                      onClick={copy}
+                      onClick={() => onCreateFlashcard(message.content)}
                       style={{
-                        color: copied 
-                          ? 'var(--forest-green-primary)' 
-                          : 'var(--sanctuary-text-secondary)',
+                        color: 'var(--sanctuary-text-secondary)',
                       }}
                     >
-                      {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                      <IconCards size={12} />
                     </ActionIcon>
                   </Tooltip>
                 )}
-              </CopyButton>
+
+                {onPinToGuide && (
+                  <Tooltip label="Pin to study guide" position="top">
+                    <ActionIcon
+                      size="xs"
+                      variant="subtle"
+                      onClick={() => onPinToGuide(message.content)}
+                      style={{
+                        color: 'var(--sanctuary-text-secondary)',
+                      }}
+                    >
+                      <IconBookmark size={12} />
+                    </ActionIcon>
+                  </Tooltip>
+                )}
+
+                {onSaveAsNote && (
+                  <Tooltip label="Save as note" position="top">
+                    <ActionIcon
+                      size="xs"
+                      variant="subtle"
+                      onClick={() => onSaveAsNote(message.content)}
+                      style={{
+                        color: 'var(--sanctuary-text-secondary)',
+                      }}
+                    >
+                      <IconFileText size={12} />
+                    </ActionIcon>
+                  </Tooltip>
+                )}
+              </Group>
             )}
           </Group>
         </Paper>

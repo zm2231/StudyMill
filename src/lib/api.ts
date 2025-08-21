@@ -22,10 +22,13 @@ export interface AuthResponse {
   tokens: AuthTokens;
 }
 
+// Standardized error schema (P1-009 compliance)
 interface ApiErrorData {
-  error: string;
-  message: string;
-  details?: unknown;
+  code: string;           // "VALIDATION_ERROR", "UNAUTHORIZED", etc.
+  message: string;        // Human-readable description
+  details?: unknown;      // Additional context
+  requestId: string;      // Correlation ID for debugging
+  timestamp: string;      // ISO timestamp
 }
 
 export interface RegisterData {
@@ -42,6 +45,23 @@ export interface LoginData {
 export interface UpdateProfileData {
   name?: string;
   email?: string;
+}
+
+export interface Note {
+  id: string;
+  user_id: string;
+  course_id?: string;
+  document_id?: string;
+  title: string;
+  content: string;
+  content_preview: string;
+  tags?: string; // JSON string of array
+  created_at: string;
+  updated_at: string;
+  // Joined fields from related tables
+  course_name?: string;
+  course_code?: string;
+  document_title?: string;
 }
 
 class ApiClient {
@@ -155,10 +175,15 @@ class ApiClient {
       const data = await response.json() as Record<string, unknown>;
 
       if (!response.ok) {
+        const errorData = data as ApiErrorData;
         throw new ApiErrorClass(
-          (data.error as string) || 'API_ERROR', 
-          (data.message as string) || 'An error occurred', 
-          data.details as string
+          errorData.code || 'API_ERROR',
+          errorData.message || 'An error occurred',
+          {
+            ...errorData.details,
+            requestId: errorData.requestId,
+            timestamp: errorData.timestamp
+          }
         );
       }
 
@@ -960,6 +985,531 @@ class ApiClient {
   // Health check
   async healthCheck(): Promise<{ message: string; status: string; timestamp: string }> {
     return this.request('/');
+  }
+
+  // AI synthesis methods
+  async summarizeDocument(documentId: string, options: { style?: 'conversational' | 'academic' | 'concise' | 'detailed' } = {}) {
+    const response = await this.request<{
+      success: boolean;
+      summary: string;
+      keyPoints: string[];
+      wordCount: number;
+      confidence: number;
+      processingTime: number;
+      sources: Array<{
+        sourceId: string;
+        sourceType: string;
+        relevanceScore: number;
+        excerpt: string;
+      }>;
+    }>('/ai/summarize', {
+      method: 'POST',
+      body: JSON.stringify({ documentId, options })
+    });
+    return response;
+  }
+
+  async createStudyGuide(params: { documentIds?: string[]; courseId?: string; options?: Record<string, unknown> }) {
+    const response = await this.request<{
+      success: boolean;
+      title: string;
+      sections: Array<{
+        id: string;
+        title: string;
+        content: string;
+      }>;
+      createdAt: string;
+      confidence: number;
+      processingTime: number;
+      sources: Array<{
+        sourceId: string;
+        sourceType: string;
+        relevanceScore: number;
+        excerpt: string;
+      }>;
+    }>('/ai/study-guide', {
+      method: 'POST',
+      body: JSON.stringify(params)
+    });
+    return response;
+  }
+
+  async generateFlashcards(documentId: string, options: { count?: number; difficulty?: 'easy' | 'medium' | 'hard' } = {}) {
+    const response = await this.request<{
+      success: boolean;
+      cards: Array<{
+        id: string;
+        front: string;
+        back: string;
+        difficulty: string;
+        confidence: number;
+        sourceDocument: string;
+      }>;
+      metadata: {
+        documentTitle: string;
+        difficulty: string;
+        generated: number;
+        requested: number;
+        confidence: number;
+        processingTime: number;
+      };
+      sources: Array<{
+        sourceId: string;
+        sourceType: string;
+        relevanceScore: number;
+        excerpt: string;
+      }>;
+    }>('/ai/flashcards', {
+      method: 'POST',
+      body: JSON.stringify({ documentId, ...options })
+    });
+    return response;
+  }
+
+  // CANONICAL UPLOAD API - Standardized document upload with SSE progress
+  async uploadDocument(formData: FormData, options: { 
+    strategy?: 'multipart' | 'presigned';
+    onProgress?: (progress: { stage: string; percent: number; message?: string }) => void;
+  } = {}) {
+    // Generate idempotency key for duplicate prevention
+    const idempotencyKey = crypto.randomUUID();
+    
+    // Add strategy to form data if specified
+    if (options.strategy) {
+      formData.set('strategy', options.strategy);
+    }
+
+    const response = await this.request<{
+      success: boolean;
+      documentId: string;
+      streamUrl: string;
+      statusUrl: string;
+      uploadUrl?: string; // For presigned uploads
+      presigned?: boolean;
+      duplicate?: boolean;
+    }>('/documents/upload', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Idempotency-Key': idempotencyKey
+      }
+    });
+
+    // Start SSE progress monitoring if onProgress callback provided
+    if (options.onProgress && !response.duplicate) {
+      this.monitorUploadProgress(response.documentId, options.onProgress);
+    }
+
+    return response;
+  }
+
+  // Monitor upload progress via SSE
+  private monitorUploadProgress(documentId: string, onProgress: (progress: any) => void) {
+    if (typeof EventSource === 'undefined') {
+      // Fallback to polling for environments without EventSource
+      this.pollUploadProgress(documentId, onProgress);
+      return;
+    }
+
+    const eventSource = new EventSource(`${this.baseUrl}/documents/${documentId}/stream`);
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onProgress(data);
+      } catch (error) {
+        console.warn('Failed to parse SSE progress data:', error);
+      }
+    };
+
+    eventSource.addEventListener('progress', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onProgress(data);
+      } catch (error) {
+        console.warn('Failed to parse SSE progress data:', error);
+      }
+    });
+
+    eventSource.addEventListener('done', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onProgress({ stage: 'done', percent: 100, ...data });
+        eventSource.close();
+      } catch (error) {
+        console.warn('Failed to parse SSE done data:', error);
+      }
+    });
+
+    eventSource.addEventListener('error', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onProgress({ stage: 'error', percent: 0, error: data });
+        eventSource.close();
+      } catch (error) {
+        console.warn('SSE error:', error);
+        eventSource.close();
+        // Fallback to polling
+        this.pollUploadProgress(documentId, onProgress);
+      }
+    });
+
+    eventSource.onerror = () => {
+      eventSource.close();
+      // Fallback to polling
+      this.pollUploadProgress(documentId, onProgress);
+    };
+  }
+
+  // Polling fallback for progress monitoring
+  private async pollUploadProgress(documentId: string, onProgress: (progress: any) => void) {
+    const maxAttempts = 30; // 1 minute max polling
+    let attempts = 0;
+
+    const poll = async () => {
+      try {
+        attempts++;
+        const status = await this.getDocumentStatus(documentId);
+        onProgress(status);
+
+        if (status.status === 'complete' || status.status === 'failed' || attempts >= maxAttempts) {
+          return;
+        }
+
+        setTimeout(poll, 2000); // Poll every 2 seconds
+      } catch (error) {
+        console.warn('Polling failed:', error);
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 2000);
+        }
+      }
+    };
+
+    poll();
+  }
+
+  // Get document processing status (canonical API)
+  async getDocumentStatus(documentId: string) {
+    return this.request<{
+      documentId: string;
+      status: 'pending' | 'processing' | 'complete' | 'failed';
+      stage: 'extract' | 'analyze' | 'memories' | 'none';
+      percent: number;
+      error: string | null;
+    }>(`/documents/${documentId}/status`);
+  }
+
+  // Today's classes methods
+  async getTodaysClasses() {
+    return this.request<{
+      success: boolean;
+      classes: Array<{
+        id: string;
+        courseId: string;
+        courseName: string;
+        courseCode: string;
+        startTime: string;
+        endTime: string;
+        location: string;
+        color: string;
+        type: string;
+      }>;
+      today?: {
+        date: string;
+        dayOfWeek: number;
+        dayName: string;
+      };
+      message?: string;
+      error?: string;
+    }>('/courses/today');
+  }
+
+  // Course schedule management
+  async updateCourseSchedule(courseId: string, schedules: Array<{
+    dayOfWeek: number; // 0=Sunday, 1=Monday, etc.
+    startTime: string; // "HH:MM" format
+    endTime: string;   // "HH:MM" format  
+    location?: string;
+  }>) {
+    return this.request<{
+      success: boolean;
+      message: string;
+    }>(`/courses/${courseId}/schedule`, {
+      method: 'POST',
+      body: JSON.stringify({ schedules })
+    });
+  }
+
+  async getCourseSchedule(courseId: string) {
+    return this.request<{
+      success: boolean;
+      schedules: Array<{
+        day_of_week: number;
+        start_time: string;
+        end_time: string;
+        location: string;
+      }>;
+    }>(`/courses/${courseId}/schedule`);
+  }
+
+  // === NOTES API ===
+
+  async createNote(data: {
+    title: string;
+    content: string;
+    courseId?: string;
+    documentId?: string;
+    tags?: string[];
+  }) {
+    return this.request<{
+      success: boolean;
+      data: Note;
+    }>('/notes', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getNotes(options: {
+    courseId?: string;
+    documentId?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {}) {
+    const params = new URLSearchParams();
+    
+    if (options.courseId) params.append('courseId', options.courseId);
+    if (options.documentId) params.append('documentId', options.documentId);
+    if (options.search) params.append('search', options.search);
+    if (options.limit) params.append('limit', options.limit.toString());
+    if (options.offset) params.append('offset', options.offset.toString());
+
+    const queryString = params.toString();
+    const url = queryString ? `/notes?${queryString}` : '/notes';
+
+    return this.request<{
+      success: boolean;
+      data: Note[];
+    }>(url);
+  }
+
+  async getNote(id: string) {
+    return this.request<{
+      success: boolean;
+      data: Note;
+    }>(`/notes/${id}`);
+  }
+
+  async updateNote(id: string, data: {
+    title?: string;
+    content?: string;
+    courseId?: string;
+    documentId?: string;
+    tags?: string[];
+  }) {
+    return this.request<{
+      success: boolean;
+      data: Note;
+    }>(`/notes/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async deleteNote(id: string) {
+    return this.request<{
+      success: boolean;
+      message: string;
+    }>(`/notes/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  // === DOCUMENT HEALTH & INSTRUMENTATION (P1-011) ===
+
+  async processDocumentWithInstrumentation(
+    documentId: string, 
+    processingMode: 'basic' | 'premium' | 'auto' = 'auto'
+  ) {
+    return this.request<{
+      success: boolean;
+      processingResult: {
+        documentId: string;
+        totalChunks: number;
+        memoriesCreated: number;
+        vectorsIndexed: number;
+        coursesLinked: number;
+        warnings: string[];
+        processingTime: number;
+        success: boolean;
+        error?: string;
+      };
+    }>(`/documents/${documentId}/process-instrumented`, {
+      method: 'POST',
+      body: JSON.stringify({ processingMode })
+    });
+  }
+
+  async getDocumentHealthReport(documentId: string) {
+    return this.request<{
+      success: boolean;
+      healthReport: {
+        documentId: string;
+        overallHealth: 'healthy' | 'warning' | 'critical';
+        healthScore: number; // 0-100
+        checks: Array<{
+          name: string;
+          status: 'pass' | 'warning' | 'fail';
+          message: string;
+          timestamp: string;
+        }>;
+        recommendations: string[];
+      };
+    }>(`/documents/${documentId}/health-report`);
+  }
+
+  // === CHAT API (P1-012) ===
+
+  async getChatSessions() {
+    return this.request<{
+      success: boolean;
+      sessions: Array<{
+        id: string;
+        courseId?: string;
+        assignmentId?: string;
+        title: string;
+        messageCount: number;
+        lastActivity?: string;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>('/chat/sessions');
+  }
+
+  async createChatSession(data: {
+    courseId?: string;
+    assignmentId?: string;
+    title?: string;
+  }) {
+    return this.request<{
+      success: boolean;
+      session: {
+        id: string;
+        courseId?: string;
+        assignmentId?: string;
+        title: string;
+        messageCount: number;
+        createdAt: string;
+        updatedAt: string;
+      };
+    }>('/chat/sessions', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getChatMessages(sessionId: string, options: {
+    limit?: number;
+    offset?: number;
+  } = {}) {
+    const params = new URLSearchParams();
+    if (options.limit) params.append('limit', options.limit.toString());
+    if (options.offset) params.append('offset', options.offset.toString());
+    
+    const queryString = params.toString();
+    const url = queryString ? `/chat/sessions/${sessionId}/messages?${queryString}` : `/chat/sessions/${sessionId}/messages`;
+    
+    return this.request<{
+      success: boolean;
+      sessionId: string;
+      messages: Array<{
+        id: string;
+        role: 'user' | 'assistant';
+        content: string;
+        documentReferences: string[];
+        timestamp: string;
+      }>;
+      pagination: {
+        limit: number;
+        offset: number;
+        hasMore: boolean;
+      };
+    }>(url);
+  }
+
+  async sendChatMessage(sessionId: string, content: string, courseId?: string) {
+    return this.request<{
+      success: boolean;
+      userMessage: {
+        id: string;
+        role: 'user';
+        content: string;
+        timestamp: string;
+      };
+      assistantMessage: {
+        id: string;
+        role: 'assistant';
+        content: string;
+        timestamp: string;
+      };
+    }>(`/chat/sessions/${sessionId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content, courseId })
+    });
+  }
+
+  // WebSocket connection for real-time chat
+  connectToChat(sessionId: string, onMessage: (data: any) => void, onError?: (error: Event) => void): WebSocket | null {
+    if (typeof window === 'undefined') {
+      console.warn('WebSocket only available in browser environment');
+      return null;
+    }
+
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      console.error('No access token available for WebSocket connection');
+      return null;
+    }
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${this.baseURL.replace(/^https?:\/\//, '')}/chat/ws?sessionId=${sessionId}`;
+    
+    try {
+      const ws = new WebSocket(wsUrl, [], {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      } as any);
+
+      ws.onopen = () => {
+        console.log('Chat WebSocket connected');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          onMessage(data);
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('Chat WebSocket error:', error);
+        if (onError) onError(error);
+      };
+
+      ws.onclose = () => {
+        console.log('Chat WebSocket disconnected');
+      };
+
+      return ws;
+    } catch (error) {
+      console.error('Failed to create WebSocket connection:', error);
+      if (onError) onError(error as Event);
+      return null;
+    }
   }
 
 }

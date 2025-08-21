@@ -11,8 +11,11 @@ import {
   Button,
   Group,
   Card,
-  Divider
+  Divider,
+  Loader,
+  Alert
 } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import { 
   IconX, 
   IconMessageCircle, 
@@ -24,11 +27,15 @@ import {
   IconBrain,
   IconCards
 } from '@tabler/icons-react';
+import { apiClient } from '../../lib/api';
 
 interface ContextPanelProps {
-  onClose: () => void;
+  onClose?: () => void;
   content?: ReactNode;
   defaultTab?: string;
+  contextType?: 'document' | 'course' | 'assignment';
+  contextId?: string;
+  style?: React.CSSProperties;
 }
 
 interface ContextPanelTab {
@@ -95,42 +102,170 @@ const RelatedTabContent = () => (
   </Stack>
 );
 
-const QuickActionsTabContent = () => (
-  <Stack gap="md">
-    <Text size="sm" c="dimmed">Quick actions for this content</Text>
-    <Stack gap="sm">
-      <Button
-        fullWidth
-        leftSection={<IconFileText size={16} />}
-        variant="light"
-        color="forestGreen"
-        justify="start"
-      >
-        Summarize
-      </Button>
-      <Button
-        fullWidth
-        leftSection={<IconBrain size={16} />}
-        variant="light"
-        color="blue"
-        justify="start"
-      >
-        Generate Study Guide
-      </Button>
-      <Button
-        fullWidth
-        leftSection={<IconCards size={16} />}
-        variant="light"
-        color="orange"
-        justify="start"
-      >
-        Create Flashcards
-      </Button>
-    </Stack>
-  </Stack>
-);
+const QuickActionsTabContent = ({ contextId, contextType }: { contextId?: string; contextType?: string }) => {
+  const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
+  const [results, setResults] = useState<Record<string, any>>({});
 
-export function ContextPanel({ onClose, content, defaultTab = 'chat' }: ContextPanelProps) {
+  const handleAction = async (action: 'summarize' | 'study-guide' | 'flashcards') => {
+    if (!contextId || contextType !== 'document') {
+      notifications.show({
+        title: 'Error',
+        message: 'No document selected for AI actions',
+        color: 'red'
+      });
+      return;
+    }
+
+    setLoadingStates(prev => ({ ...prev, [action]: true }));
+    
+    try {
+      let result;
+      switch (action) {
+        case 'summarize':
+          result = await apiClient.summarizeDocument(contextId);
+          setResults(prev => ({ ...prev, summary: result }));
+          notifications.show({
+            title: 'Summary Generated',
+            message: `Generated summary with ${result.wordCount} words`,
+            color: 'green'
+          });
+          break;
+        case 'study-guide':
+          result = await apiClient.createStudyGuide({ documentIds: [contextId] });
+          setResults(prev => ({ ...prev, studyGuide: result }));
+          notifications.show({
+            title: 'Study Guide Created',
+            message: `Generated ${result.sections.length} sections`,
+            color: 'blue'
+          });
+          break;
+        case 'flashcards':
+          result = await apiClient.generateFlashcards(contextId, { count: 10 });
+          setResults(prev => ({ ...prev, flashcards: result }));
+          notifications.show({
+            title: 'Flashcards Generated',
+            message: `Created ${result.cards.length} flashcards`,
+            color: 'orange'
+          });
+          break;
+      }
+    } catch (error) {
+      console.error(`${action} error:`, error);
+      notifications.show({
+        title: 'Error',
+        message: `Failed to ${action.replace('-', ' ')}. Please try again.`,
+        color: 'red'
+      });
+    } finally {
+      setLoadingStates(prev => ({ ...prev, [action]: false }));
+    }
+  };
+
+  return (
+    <Stack gap="md">
+      <Text size="sm" c="dimmed">Quick actions for this content</Text>
+      <Stack gap="sm">
+        <Button
+          fullWidth
+          leftSection={loadingStates.summarize ? <Loader size={16} /> : <IconFileText size={16} />}
+          variant="light"
+          color="forestGreen"
+          justify="start"
+          loading={loadingStates.summarize}
+          disabled={!contextId || contextType !== 'document'}
+          onClick={() => handleAction('summarize')}
+        >
+          Summarize
+        </Button>
+        <Button
+          fullWidth
+          leftSection={loadingStates['study-guide'] ? <Loader size={16} /> : <IconBrain size={16} />}
+          variant="light"
+          color="blue"
+          justify="start"
+          loading={loadingStates['study-guide']}
+          disabled={!contextId || contextType !== 'document'}
+          onClick={() => handleAction('study-guide')}
+        >
+          Generate Study Guide
+        </Button>
+        <Button
+          fullWidth
+          leftSection={loadingStates.flashcards ? <Loader size={16} /> : <IconCards size={16} />}
+          variant="light"
+          color="orange"
+          justify="start"
+          loading={loadingStates.flashcards}
+          disabled={!contextId || contextType !== 'document'}
+          onClick={() => handleAction('flashcards')}
+        >
+          Create Flashcards
+        </Button>
+      </Stack>
+
+      {/* Display Results */}
+      {results.summary && (
+        <Card withBorder p="md" mt="md">
+          <Stack gap="xs">
+            <Text size="sm" fw={600}>Summary</Text>
+            <Text size="sm">{results.summary.summary}</Text>
+            <Group gap="xs">
+              <Badge size="xs" variant="light" color="green">
+                {results.summary.wordCount} words
+              </Badge>
+              <Badge size="xs" variant="light" color="blue">
+                {Math.round(results.summary.confidence * 100)}% confidence
+              </Badge>
+            </Group>
+          </Stack>
+        </Card>
+      )}
+
+      {results.studyGuide && (
+        <Card withBorder p="md" mt="md">
+          <Stack gap="xs">
+            <Text size="sm" fw={600}>Study Guide</Text>
+            <Text size="sm">{results.studyGuide.title}</Text>
+            <Badge size="xs" variant="light" color="blue">
+              {results.studyGuide.sections.length} sections
+            </Badge>
+          </Stack>
+        </Card>
+      )}
+
+      {results.flashcards && (
+        <Card withBorder p="md" mt="md">
+          <Stack gap="xs">
+            <Text size="sm" fw={600}>Flashcards</Text>
+            <Text size="xs">Generated {results.flashcards.cards.length} flashcards</Text>
+            {results.flashcards.cards.slice(0, 2).map((card: any, index: number) => (
+              <Card key={index} p="xs" withBorder bg="gray.0">
+                <Stack gap="xs">
+                  <Text size="xs" fw={500}>Q: {card.front}</Text>
+                  <Text size="xs" c="dimmed">A: {card.back}</Text>
+                </Stack>
+              </Card>
+            ))}
+            {results.flashcards.cards.length > 2 && (
+              <Text size="xs" c="dimmed">
+                ...and {results.flashcards.cards.length - 2} more
+              </Text>
+            )}
+          </Stack>
+        </Card>
+      )}
+    </Stack>
+  );
+};
+
+export function ContextPanel({ 
+  onClose, 
+  content, 
+  defaultTab = 'chat', 
+  contextType = 'document', 
+  contextId,
+  style 
+}: ContextPanelProps) {
   const [activeTab, setActiveTab] = useState(defaultTab);
 
   // Phase 1 Context Panel tabs as per specifications
@@ -158,26 +293,28 @@ export function ContextPanel({ onClose, content, defaultTab = 'chat' }: ContextP
       id: 'actions',
       label: 'Quick Actions',
       icon: IconBolt,
-      content: <QuickActionsTabContent />,
+      content: <QuickActionsTabContent contextId={contextId} contextType={contextType} />,
     }
   ];
 
   return (
-    <Stack h="100%" gap={0}>
+    <Stack h="100%" gap={0} style={style}>
       {/* Context Panel Header */}
       <Group p="md" justify="space-between" style={{ borderBottom: '1px solid var(--border-light)' }}>
         <Group gap="xs">
           <IconSparkles size={20} color="var(--forest-green-primary)" />
           <Text size="md" fw={600}>AI Assistant</Text>
         </Group>
-        <ActionIcon
-          variant="subtle"
-          color="gray"
-          onClick={onClose}
-          size="sm"
-        >
-          <IconX size={16} />
-        </ActionIcon>
+        {onClose && (
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            onClick={onClose}
+            size="sm"
+          >
+            <IconX size={16} />
+          </ActionIcon>
+        )}
       </Group>
 
       {/* Context Panel Tabs */}

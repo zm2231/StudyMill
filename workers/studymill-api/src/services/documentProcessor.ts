@@ -4,6 +4,7 @@ import { DocumentService } from './document';
 import { DatabaseService } from './database';
 import { VectorService } from './vector';
 import { EmbeddingIndexerService } from './embeddingIndexer';
+import { EnhancedMemoryService, CreateMemoryData } from './enhancedMemory';
 import { createError } from '../middleware/error';
 
 export interface ProcessingJob {
@@ -31,11 +32,24 @@ export interface ProcessedDocument {
   processingTime: number;
 }
 
+export interface ProcessingResult {
+  documentId: string;
+  totalChunks: number;
+  memoriesCreated: number;
+  vectorsIndexed: number;
+  coursesLinked: number;
+  warnings: string[];
+  processingTime: number;
+  success: boolean;
+  error?: string;
+}
+
 export class DocumentProcessorService {
   private parseExtractService: ParseExtractService;
   private unifiedProcessor: UnifiedDocumentProcessor;
   private vectorService: VectorService;
   private embeddingIndexerService: EmbeddingIndexerService;
+  private enhancedMemoryService: EnhancedMemoryService;
   private useHybridProcessing: boolean;
 
   constructor(
@@ -50,6 +64,7 @@ export class DocumentProcessorService {
     this.unifiedProcessor = new UnifiedDocumentProcessor(parseExtractApiKey, r2Bucket, dbService);
     this.vectorService = new VectorService(aiBinding, vectorizeIndex, dbService);
     this.embeddingIndexerService = new EmbeddingIndexerService(this.vectorService, dbService);
+    this.enhancedMemoryService = new EnhancedMemoryService(dbService, this.vectorService);
     
     // Feature flag: Use hybrid processing by default
     this.useHybridProcessing = process.env.USE_HYBRID_PROCESSING !== 'false';
@@ -251,6 +266,19 @@ export class DocumentProcessorService {
       // Store processed content in database
       await this.storeProcessedContent(job.documentId, finalResult.data, chunks);
 
+      job.progress = 85;
+
+      // Create memories from document content (P1-011 Enhancement)
+      let memoriesCreated = 0;
+      try {
+        console.log(`Creating memories for document ${job.documentId}`);
+        memoriesCreated = await this.createDocumentMemories(job.documentId, finalResult.data, userId);
+        console.log(`Created ${memoriesCreated} memories for document ${job.documentId}`);
+      } catch (memoryError) {
+        console.error('Memory creation failed:', memoryError);
+        // Don't fail the entire job if memory creation fails
+      }
+
       job.progress = 90;
 
       // Generate vector embeddings for search
@@ -371,6 +399,107 @@ export class DocumentProcessorService {
 
     } catch (error) {
       console.error('Failed to store processed content:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create memories from processed document content (P1-011 Enhancement)
+   */
+  private async createDocumentMemories(
+    documentId: string, 
+    extractedData: any, 
+    userId?: string
+  ): Promise<number> {
+    if (!userId) {
+      console.warn(`No userId provided for memory creation, skipping for document ${documentId}`);
+      return 0;
+    }
+
+    let memoriesCreated = 0;
+    
+    try {
+      // Get document metadata for context
+      const document = await this.documentService.getDocument(documentId, userId);
+      if (!document) {
+        console.warn(`Document ${documentId} not found, skipping memory creation`);
+        return 0;
+      }
+
+      // Create a primary memory from the main document content
+      if (extractedData.text && extractedData.text.trim().length > 50) {
+        const mainMemoryData: CreateMemoryData = {
+          content: extractedData.text,
+          sourceType: 'document',
+          sourceId: documentId,
+          containerTags: [document.course_id || 'uncategorized'],
+          metadata: {
+            filename: document.filename,
+            fileType: document.file_type,
+            pageCount: extractedData.pages || 1,
+            tableCount: extractedData.tables?.length || 0,
+            imageCount: extractedData.images?.length || 0,
+            processingTimestamp: new Date().toISOString()
+          }
+        };
+
+        await this.enhancedMemoryService.createMemory(userId, mainMemoryData);
+        memoriesCreated++;
+      }
+
+      // Create additional memories for tables if present
+      if (extractedData.tables && extractedData.tables.length > 0) {
+        for (const table of extractedData.tables.slice(0, 5)) { // Limit to 5 tables
+          if (table.text && table.text.trim().length > 20) {
+            const tableMemoryData: CreateMemoryData = {
+              content: `Table from ${document.filename}: ${table.text}`,
+              sourceType: 'document',
+              sourceId: documentId,
+              containerTags: [document.course_id || 'uncategorized', 'table'],
+              metadata: {
+                filename: document.filename,
+                contentType: 'table',
+                pageNumber: table.page || null,
+                parentDocumentId: documentId,
+                processingTimestamp: new Date().toISOString()
+              }
+            };
+
+            await this.enhancedMemoryService.createMemory(userId, tableMemoryData);
+            memoriesCreated++;
+          }
+        }
+      }
+
+      // Create memories for images with descriptions if present
+      if (extractedData.images && extractedData.images.length > 0) {
+        for (const image of extractedData.images.slice(0, 3)) { // Limit to 3 images
+          if (image.description && image.description.trim().length > 10) {
+            const imageMemoryData: CreateMemoryData = {
+              content: `Image from ${document.filename}: ${image.description}`,
+              sourceType: 'document',
+              sourceId: documentId,
+              containerTags: [document.course_id || 'uncategorized', 'image'],
+              metadata: {
+                filename: document.filename,
+                contentType: 'image',
+                pageNumber: image.page || null,
+                parentDocumentId: documentId,
+                processingTimestamp: new Date().toISOString()
+              }
+            };
+
+            await this.enhancedMemoryService.createMemory(userId, imageMemoryData);
+            memoriesCreated++;
+          }
+        }
+      }
+
+      console.log(`Successfully created ${memoriesCreated} memories for document ${documentId}`);
+      return memoriesCreated;
+
+    } catch (error) {
+      console.error(`Failed to create memories for document ${documentId}:`, error);
       throw error;
     }
   }
@@ -946,6 +1075,452 @@ export class DocumentProcessorService {
     }
 
     return summary;
+  }
+
+  /**
+   * Process document with comprehensive instrumentation (P1-011 Enhancement)
+   */
+  async processDocumentWithInstrumentation(
+    documentId: string,
+    userId: string,
+    processingMode: 'basic' | 'premium' | 'auto' = 'auto'
+  ): Promise<ProcessingResult> {
+    const startTime = Date.now();
+    const warnings: string[] = [];
+    
+    try {
+      // Start the processing job
+      const job = await this.queueDocumentProcessing(documentId, userId, processingMode);
+      
+      // Wait for completion with timeout
+      const maxWaitTime = 600000; // 10 minutes
+      const pollInterval = 2000; // 2 seconds
+      let elapsedTime = 0;
+      
+      while (elapsedTime < maxWaitTime) {
+        await this.delay(pollInterval);
+        elapsedTime += pollInterval;
+        
+        const status = await this.getProcessingStatus(documentId, userId);
+        
+        if (status.status === 'completed') {
+          break;
+        } else if (status.status === 'failed') {
+          return {
+            documentId,
+            totalChunks: 0,
+            memoriesCreated: 0,
+            vectorsIndexed: 0,
+            coursesLinked: 0,
+            warnings: [status.error || 'Processing failed'],
+            processingTime: Date.now() - startTime,
+            success: false,
+            error: status.error
+          };
+        }
+      }
+      
+      // Verify processing completed
+      const finalStatus = await this.getProcessingStatus(documentId, userId);
+      if (finalStatus.status !== 'completed') {
+        return {
+          documentId,
+          totalChunks: 0,
+          memoriesCreated: 0,
+          vectorsIndexed: 0,
+          coursesLinked: 0,
+          warnings: ['Processing timeout'],
+          processingTime: Date.now() - startTime,
+          success: false,
+          error: 'Processing did not complete within timeout period'
+        };
+      }
+      
+      // Collect comprehensive metrics
+      const chunkCount = finalStatus.chunkCount || 0;
+      
+      // Check memory creation (Silent Failure Detection)
+      let memoriesCreated = 0;
+      try {
+        const memoriesResult = await this.dbService.db.prepare(`
+          SELECT COUNT(*) as count 
+          FROM memories 
+          WHERE user_id = ? AND source_id = ? AND source_type = 'document'
+        `).bind(userId, documentId).first();
+        memoriesCreated = (memoriesResult as any)?.count || 0;
+        
+        // Warning for zero memories created (potential silent failure)
+        if (memoriesCreated === 0 && chunkCount > 0) {
+          warnings.push('No memories created despite successful chunk processing - potential memory creation failure');
+        }
+      } catch (memoryCheckError) {
+        warnings.push('Unable to verify memory creation status');
+        console.error('Memory verification failed:', memoryCheckError);
+      }
+      
+      // Check vector indexing status
+      let vectorsIndexed = 0;
+      try {
+        const vectorStatus = await this.getVectorSearchStatus(documentId, userId);
+        vectorsIndexed = vectorStatus.embeddingCount;
+        
+        // Warning for zero vectors indexed (potential silent failure)
+        if (vectorsIndexed === 0 && chunkCount > 0) {
+          warnings.push('No vectors indexed despite successful chunk processing - potential indexing failure');
+        }
+      } catch (vectorCheckError) {
+        warnings.push('Unable to verify vector indexing status');
+        console.error('Vector verification failed:', vectorCheckError);
+      }
+      
+      // Check course linkage
+      let coursesLinked = 0;
+      try {
+        const document = await this.documentService.getDocument(documentId, userId);
+        if (document?.course_id) {
+          coursesLinked = 1;
+        } else {
+          warnings.push('Document not linked to any course - may affect discoverability');
+        }
+      } catch (courseCheckError) {
+        warnings.push('Unable to verify course linkage');
+        console.error('Course verification failed:', courseCheckError);
+      }
+      
+      // Health check for data consistency
+      await this.performHealthChecks(documentId, userId, warnings);
+      
+      const processingTime = Date.now() - startTime;
+      
+      return {
+        documentId,
+        totalChunks: chunkCount,
+        memoriesCreated,
+        vectorsIndexed,
+        coursesLinked,
+        warnings,
+        processingTime,
+        success: true
+      };
+      
+    } catch (error) {
+      console.error('Instrumented processing failed:', error);
+      return {
+        documentId,
+        totalChunks: 0,
+        memoriesCreated: 0,
+        vectorsIndexed: 0,
+        coursesLinked: 0,
+        warnings: ['Processing failed with exception'],
+        processingTime: Date.now() - startTime,
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Perform health checks on processed document (P1-011 Enhancement)
+   */
+  private async performHealthChecks(
+    documentId: string,
+    userId: string,
+    warnings: string[]
+  ): Promise<void> {
+    try {
+      // Check document content exists
+      const contentResult = await this.dbService.db.prepare(`
+        SELECT extracted_text FROM document_content WHERE document_id = ?
+      `).bind(documentId).first();
+      
+      if (!contentResult || !(contentResult as any).extracted_text) {
+        warnings.push('Document content missing - processing may have failed silently');
+        return;
+      }
+      
+      const extractedText = (contentResult as any).extracted_text;
+      
+      // Check text content quality
+      if (extractedText.length < 50) {
+        warnings.push('Very short extracted text - document may not have processed correctly');
+      }
+      
+      // Check for common extraction errors
+      const suspiciousPatterns = [
+        /^\s*$/, // Empty or whitespace only
+        /^[^\w\s]*$/, // Only special characters
+        /(.)\1{100,}/ // Repeated characters (OCR errors)
+      ];
+      
+      for (const pattern of suspiciousPatterns) {
+        if (pattern.test(extractedText)) {
+          warnings.push('Suspicious text patterns detected - content extraction may have errors');
+          break;
+        }
+      }
+      
+      // Check chunk consistency
+      const chunksResult = await this.dbService.db.prepare(`
+        SELECT COUNT(*) as count, SUM(character_count) as total_chars
+        FROM document_chunks WHERE document_id = ?
+      `).bind(documentId).first();
+      
+      const chunkData = chunksResult as any;
+      if (chunkData?.count > 0) {
+        const totalChunkChars = chunkData.total_chars || 0;
+        const extractedTextChars = extractedText.length;
+        
+        // Check if chunk characters significantly differ from extracted text
+        const charDifference = Math.abs(totalChunkChars - extractedTextChars) / extractedTextChars;
+        if (charDifference > 0.5) { // More than 50% difference
+          warnings.push('Significant character count mismatch between extracted text and chunks');
+        }
+      }
+      
+      // Check processing pipeline consistency
+      const document = await this.documentService.getDocument(documentId, userId);
+      if (document?.processing_status !== 'completed') {
+        warnings.push('Document processing status inconsistent with health check timing');
+      }
+      
+    } catch (error) {
+      warnings.push('Health check verification failed');
+      console.error('Health check error:', error);
+    }
+  }
+
+  /**
+   * Get comprehensive processing health report for a document (P1-011 Enhancement)
+   */
+  async getProcessingHealthReport(documentId: string, userId: string): Promise<{
+    documentId: string;
+    overallHealth: 'healthy' | 'warning' | 'critical';
+    healthScore: number; // 0-100
+    checks: Array<{
+      name: string;
+      status: 'pass' | 'warning' | 'fail';
+      message: string;
+      timestamp: string;
+    }>;
+    recommendations: string[];
+  }> {
+    const checks: Array<{ name: string; status: 'pass' | 'warning' | 'fail'; message: string; timestamp: string }> = [];
+    const recommendations: string[] = [];
+    const timestamp = new Date().toISOString();
+    
+    try {
+      // Check 1: Document exists and is accessible
+      const document = await this.documentService.getDocument(documentId, userId);
+      if (!document) {
+        checks.push({
+          name: 'Document Access',
+          status: 'fail',
+          message: 'Document not found or not accessible',
+          timestamp
+        });
+        
+        return {
+          documentId,
+          overallHealth: 'critical',
+          healthScore: 0,
+          checks,
+          recommendations: ['Verify document exists and user has access']
+        };
+      }
+      
+      checks.push({
+        name: 'Document Access',
+        status: 'pass',
+        message: 'Document accessible',
+        timestamp
+      });
+      
+      // Check 2: Processing status
+      if (document.processing_status === 'completed') {
+        checks.push({
+          name: 'Processing Status',
+          status: 'pass',
+          message: 'Document processing completed successfully',
+          timestamp
+        });
+      } else if (document.processing_status === 'failed') {
+        checks.push({
+          name: 'Processing Status',
+          status: 'fail',
+          message: `Processing failed: ${document.processing_error || 'Unknown error'}`,
+          timestamp
+        });
+        recommendations.push('Reprocess document with different settings');
+      } else {
+        checks.push({
+          name: 'Processing Status',
+          status: 'warning',
+          message: `Processing status: ${document.processing_status}`,
+          timestamp
+        });
+      }
+      
+      // Check 3: Content extraction
+      const contentResult = await this.dbService.db.prepare(`
+        SELECT extracted_text, content_data FROM document_content WHERE document_id = ?
+      `).bind(documentId).first();
+      
+      if (contentResult) {
+        const extractedText = (contentResult as any).extracted_text || '';
+        if (extractedText.length > 50) {
+          checks.push({
+            name: 'Content Extraction',
+            status: 'pass',
+            message: `Extracted ${extractedText.length} characters`,
+            timestamp
+          });
+        } else {
+          checks.push({
+            name: 'Content Extraction',
+            status: 'warning',
+            message: 'Very short extracted text',
+            timestamp
+          });
+          recommendations.push('Consider reprocessing with premium extraction');
+        }
+      } else {
+        checks.push({
+          name: 'Content Extraction',
+          status: 'fail',
+          message: 'No extracted content found',
+          timestamp
+        });
+        recommendations.push('Reprocess document');
+      }
+      
+      // Check 4: Chunk creation
+      const chunksResult = await this.dbService.db.prepare(`
+        SELECT COUNT(*) as count FROM document_chunks WHERE document_id = ?
+      `).bind(documentId).first();
+      
+      const chunkCount = (chunksResult as any)?.count || 0;
+      if (chunkCount > 0) {
+        checks.push({
+          name: 'Chunk Creation',
+          status: 'pass',
+          message: `Created ${chunkCount} chunks`,
+          timestamp
+        });
+      } else {
+        checks.push({
+          name: 'Chunk Creation',
+          status: 'fail',
+          message: 'No chunks created',
+          timestamp
+        });
+        recommendations.push('Verify document content is suitable for chunking');
+      }
+      
+      // Check 5: Memory creation
+      const memoriesResult = await this.dbService.db.prepare(`
+        SELECT COUNT(*) as count FROM memories 
+        WHERE user_id = ? AND source_id = ? AND source_type = 'document'
+      `).bind(userId, documentId).first();
+      
+      const memoryCount = (memoriesResult as any)?.count || 0;
+      if (memoryCount > 0) {
+        checks.push({
+          name: 'Memory Creation',
+          status: 'pass',
+          message: `Created ${memoryCount} memories`,
+          timestamp
+        });
+      } else if (chunkCount > 0) {
+        checks.push({
+          name: 'Memory Creation',
+          status: 'warning',
+          message: 'No memories created despite successful chunking',
+          timestamp
+        });
+        recommendations.push('Check memory creation service configuration');
+      } else {
+        checks.push({
+          name: 'Memory Creation',
+          status: 'fail',
+          message: 'No memories created',
+          timestamp
+        });
+      }
+      
+      // Check 6: Vector indexing
+      try {
+        const vectorStatus = await this.getVectorSearchStatus(documentId, userId);
+        if (vectorStatus.embeddingCount > 0) {
+          checks.push({
+            name: 'Vector Indexing',
+            status: 'pass',
+            message: `Indexed ${vectorStatus.embeddingCount} vectors`,
+            timestamp
+          });
+        } else if (chunkCount > 0) {
+          checks.push({
+            name: 'Vector Indexing',
+            status: 'warning',
+            message: 'No vectors indexed despite successful chunking',
+            timestamp
+          });
+          recommendations.push('Reindex document for vector search');
+        } else {
+          checks.push({
+            name: 'Vector Indexing',
+            status: 'fail',
+            message: 'No vectors indexed',
+            timestamp
+          });
+        }
+      } catch (vectorError) {
+        checks.push({
+          name: 'Vector Indexing',
+          status: 'warning',
+          message: 'Unable to verify vector indexing status',
+          timestamp
+        });
+      }
+      
+      // Calculate health score
+      const totalChecks = checks.length;
+      const passCount = checks.filter(c => c.status === 'pass').length;
+      const warningCount = checks.filter(c => c.status === 'warning').length;
+      const healthScore = Math.round((passCount + warningCount * 0.5) / totalChecks * 100);
+      
+      // Determine overall health
+      let overallHealth: 'healthy' | 'warning' | 'critical';
+      if (healthScore >= 80) {
+        overallHealth = 'healthy';
+      } else if (healthScore >= 50) {
+        overallHealth = 'warning';
+      } else {
+        overallHealth = 'critical';
+      }
+      
+      return {
+        documentId,
+        overallHealth,
+        healthScore,
+        checks,
+        recommendations
+      };
+      
+    } catch (error) {
+      console.error('Health report generation failed:', error);
+      return {
+        documentId,
+        overallHealth: 'critical',
+        healthScore: 0,
+        checks: [{
+          name: 'Health Check System',
+          status: 'fail',
+          message: 'Unable to perform health checks',
+          timestamp
+        }],
+        recommendations: ['Contact system administrator']
+      };
+    }
   }
 
   /**

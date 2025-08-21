@@ -14,26 +14,37 @@ import {
   Loader,
   Badge,
   Button,
-  Divider
+  Divider,
+  Select
 } from '@mantine/core';
 import {
   IconSend,
   IconUser,
   IconRobot,
   IconClearAll,
-  IconMessageCircle
+  IconMessageCircle,
+  IconFilter
 } from '@tabler/icons-react';
 import { Message } from '@/types/chat';
 import { ChatMessage } from './ChatMessage';
 import { TypingIndicator } from './TypingIndicator';
 import { useAuth } from '@/hooks/useAuth';
 import { useWebSocketChat } from '@/hooks/useWebSocketChat';
+import { apiClient } from '@/lib/api';
+import { notifications } from '@mantine/notifications';
 
 interface ChatInterfaceProps {
   sessionId?: string;
   courseContext?: string;
   assignmentContext?: string;
   courseId?: string;
+}
+
+interface ChatScope {
+  value: string;
+  label: string;
+  type: 'all' | 'course' | 'assignment';
+  id?: string;
 }
 
 export function ChatInterface({
@@ -44,6 +55,10 @@ export function ChatInterface({
 }: ChatInterfaceProps) {
   const { user } = useAuth();
   const [inputValue, setInputValue] = useState('');
+  const [selectedScope, setSelectedScope] = useState<string>('all');
+  const [availableScopes, setAvailableScopes] = useState<ChatScope[]>([
+    { value: 'all', label: 'All Documents', type: 'all' }
+  ]);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
@@ -58,6 +73,7 @@ export function ChatInterface({
   } = useWebSocketChat({
     sessionId,
     courseId,
+    scope: selectedScope,
     onError: (error) => {
       console.error('Chat error:', error);
     }
@@ -65,6 +81,39 @@ export function ChatInterface({
 
   const isLoading = isConnecting || !isConnected;
   const isTyping = !!streamingMessage;
+
+  // Load available courses and assignments for scope selector
+  useEffect(() => {
+    const loadScopes = async () => {
+      try {
+        const scopes: ChatScope[] = [
+          { value: 'all', label: 'All Documents', type: 'all' }
+        ];
+
+        // Load courses
+        const coursesResponse = await apiClient.getCourses();
+        if (coursesResponse.success && coursesResponse.courses) {
+          coursesResponse.courses.forEach(course => {
+            scopes.push({
+              value: `course-${course.id}`,
+              label: `📚 ${course.name} (${course.code})`,
+              type: 'course',
+              id: course.id
+            });
+          });
+        }
+
+        // TODO: Load assignments when assignments API is available
+        // const assignmentsResponse = await apiClient.getAssignments();
+
+        setAvailableScopes(scopes);
+      } catch (error) {
+        console.error('Failed to load scopes:', error);
+      }
+    };
+
+    loadScopes();
+  }, []);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -103,6 +152,73 @@ export function ChatInterface({
 
   const clearChat = () => {
     clearMessages();
+  };
+
+  // Message action handlers
+  const handleCreateFlashcard = async (content: string) => {
+    try {
+      // TODO: Implement flashcard creation when flashcards API is available
+      notifications.show({
+        title: 'Flashcard Created',
+        message: 'This feature will be available soon!',
+        color: 'blue'
+      });
+      console.log('Create flashcard:', content);
+    } catch (error) {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to create flashcard',
+        color: 'red'
+      });
+    }
+  };
+
+  const handlePinToGuide = async (content: string) => {
+    try {
+      // TODO: Implement study guide pinning when study guides API is available
+      notifications.show({
+        title: 'Pinned to Study Guide',
+        message: 'This feature will be available soon!',
+        color: 'green'
+      });
+      console.log('Pin to guide:', content);
+    } catch (error) {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to pin to study guide',
+        color: 'red'
+      });
+    }
+  };
+
+  const handleSaveAsNote = async (content: string) => {
+    try {
+      // Extract title from content (first line or first 50 chars)
+      const title = content.split('\n')[0].substring(0, 50) + (content.length > 50 ? '...' : '');
+      
+      const response = await apiClient.createNote({
+        title: `Chat Note: ${title}`,
+        content: content,
+        // If we have a course scope selected, use it for the note
+        courseId: selectedScope.startsWith('course-') 
+          ? selectedScope.replace('course-', '') 
+          : undefined
+      });
+
+      if (response.success) {
+        notifications.show({
+          title: 'Note Saved',
+          message: 'Chat message saved as a note successfully',
+          color: 'green'
+        });
+      }
+    } catch (error) {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to save note',
+        color: 'red'
+      });
+    }
   };
 
   const hasContext = courseContext || assignmentContext;
@@ -152,19 +268,38 @@ export function ChatInterface({
               </Badge>
             </Group>
             
-            <Button
-              leftSection={<IconClearAll size={16} />}
-              variant="outline"
-              size="sm"
-              onClick={clearChat}
-              disabled={messages.length === 0}
-              style={{
-                borderColor: 'var(--warm-brown)',
-                color: 'var(--warm-brown)',
-              }}
-            >
-              Clear Chat
-            </Button>
+            {/* Scope Selector and Actions */}
+            <Group gap="sm">
+              <Select
+                value={selectedScope}
+                onChange={(value) => setSelectedScope(value || 'all')}
+                data={availableScopes.map(scope => ({ value: scope.value, label: scope.label }))}
+                leftSection={<IconFilter size={16} />}
+                placeholder="Select scope"
+                w={220}
+                size="sm"
+                styles={{
+                  input: {
+                    backgroundColor: 'var(--sanctuary-surface)',
+                    borderColor: 'var(--border-light)',
+                  }
+                }}
+              />
+              
+              <Button
+                leftSection={<IconClearAll size={16} />}
+                variant="outline"
+                size="sm"
+                onClick={clearChat}
+                disabled={messages.length === 0}
+                style={{
+                  borderColor: 'var(--warm-brown)',
+                  color: 'var(--warm-brown)',
+                }}
+              >
+                Clear Chat
+              </Button>
+            </Group>
           </Group>
 
           {hasContext && (
@@ -224,10 +359,22 @@ export function ChatInterface({
               ) : (
                 <>
                   {messages.map((message) => (
-                    <ChatMessage key={message.id} message={message} />
+                    <ChatMessage 
+                      key={message.id} 
+                      message={message}
+                      onCreateFlashcard={handleCreateFlashcard}
+                      onPinToGuide={handlePinToGuide}
+                      onSaveAsNote={handleSaveAsNote}
+                    />
                   ))}
                   {streamingMessage && (
-                    <ChatMessage key={streamingMessage.id} message={streamingMessage} />
+                    <ChatMessage 
+                      key={streamingMessage.id} 
+                      message={streamingMessage}
+                      onCreateFlashcard={handleCreateFlashcard}
+                      onPinToGuide={handlePinToGuide}
+                      onSaveAsNote={handleSaveAsNote}
+                    />
                   )}
                 </>
               )}

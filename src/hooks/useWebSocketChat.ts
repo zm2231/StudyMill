@@ -17,6 +17,7 @@ interface WebSocketMessage {
 interface UseWebSocketChatOptions {
   sessionId?: string;
   courseId?: string;
+  scope?: string;
   onMessage?: (message: Message) => void;
   onError?: (error: string) => void;
 }
@@ -24,6 +25,7 @@ interface UseWebSocketChatOptions {
 export function useWebSocketChat({
   sessionId,
   courseId,
+  scope,
   onMessage,
   onError
 }: UseWebSocketChatOptions) {
@@ -58,7 +60,15 @@ export function useWebSocketChat({
     setIsConnecting(true);
     
     const baseUrl = getApiBaseUrl();
-    const wsUrl = `${baseUrl}/api/v1/chat/ws?sessionId=${currentSessionId.current}`;
+    const params = new URLSearchParams({
+      sessionId: currentSessionId.current
+    });
+    
+    if (scope && scope !== 'all') {
+      params.append('scope', scope);
+    }
+    
+    const wsUrl = `${baseUrl}/api/v1/chat/ws?${params.toString()}`;
     
     try {
       // WebSocket doesn't support custom headers directly, so we'll pass auth via query params
@@ -251,7 +261,7 @@ export function useWebSocketChat({
     return () => {
       disconnect();
     };
-  }, [connect, disconnect]);
+  }, [connect, disconnect, scope]);
 
   return {
     isConnected,
