@@ -91,7 +91,7 @@ export function RecentSection() {
           action: activity.action,
           type: activity.type,
           course: activity.course,
-          timestamp: activity.timestamp,
+          timestamp: new Date(activity.timestamp), // Convert string to Date object
           metadata: activity.metadata,
           icon: getTypeIcon(activity.type)
         }));

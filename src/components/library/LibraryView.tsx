@@ -100,7 +100,13 @@ export function LibraryView({ onDocumentSelect, onBulkAction }: LibraryViewProps
       });
 
       if (response.success) {
-        setDocuments(response.documents);
+        // Transform API data to ensure proper Date objects
+        const transformedDocuments = response.documents.map(doc => ({
+          ...doc,
+          updatedAt: new Date(doc.updatedAt),
+          createdAt: doc.createdAt ? new Date(doc.createdAt) : undefined
+        }));
+        setDocuments(transformedDocuments);
       } else {
         setError('Failed to load documents');
       }

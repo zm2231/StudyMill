@@ -72,7 +72,7 @@ export function ResumeSection() {
           title: item.title,
           type: item.type,
           course: item.course,
-          lastAccessed: item.lastAccessed,
+          lastAccessed: new Date(item.lastAccessed), // Convert string to Date object
           progress: item.progress,
           icon: IconBook // Default icon, could be enhanced based on type
         }));

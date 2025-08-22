@@ -39,6 +39,7 @@ interface CourseCreationProps {
   opened: boolean;
   onClose: () => void;
   editingCourse?: any; // For future edit functionality
+  onSuccess?: () => void; // Called after successful course creation
 }
 
 const DAYS_OF_WEEK = [
@@ -67,7 +68,7 @@ const COMMON_SEMESTERS = [
   'Fall 2027'
 ];
 
-export function CourseCreation({ opened, onClose, editingCourse }: CourseCreationProps) {
+export function CourseCreation({ opened, onClose, editingCourse, onSuccess }: CourseCreationProps) {
   const { createCourse, updateCourse, loading } = useCourses();
   
   // Form state
@@ -148,10 +149,7 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
       return;
     }
 
-    if (formData.schedule.length === 0) {
-      setError('At least one class schedule is required');
-      return;
-    }
+    // Note: Schedule is optional during course creation - can be added later
 
     if (!formData.semester.startDate || !formData.semester.endDate) {
       setError('Semester start and end dates are required');
@@ -166,6 +164,7 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
       }
       
       setSuccess(true);
+      onSuccess?.(); // Notify parent of successful creation
       setTimeout(() => {
         setSuccess(false);
         handleClose();
@@ -215,9 +214,41 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
       title={editingCourse ? "Edit Course" : "Create Course"}
       size="lg"
       radius="md"
-      styles={{
-        title: { fontSize: '1.25rem', fontWeight: 600 }
+      centered
+      overlayProps={{
+        backgroundOpacity: 0.55,
+        blur: 3
       }}
+      styles={{
+        title: { fontSize: '1.25rem', fontWeight: 600 },
+        content: {
+          maxHeight: '90vh',
+          overflow: 'hidden'
+        },
+        body: {
+          maxHeight: 'calc(90vh - 60px)',
+          overflow: 'auto',
+          paddingRight: '6px',
+          '&::-webkit-scrollbar': {
+            width: '6px'
+          },
+          '&::-webkit-scrollbar-track': {
+            background: '#f1f3f4',
+            borderRadius: '3px'
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#c1c8cd',
+            borderRadius: '3px',
+            '&:hover': {
+              background: '#a8b3ba'
+            }
+          }
+        }
+      }}
+      trapFocus={false}
+      closeOnEscape
+      withCloseButton
+      zIndex={1000}
     >
       <Stack gap="lg">
         {error && (
@@ -280,6 +311,10 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
                 value={formData.color}
                 onChange={(color) => setFormData(prev => ({ ...prev, color }))}
                 swatches={PRESET_COLORS}
+                popoverProps={{
+                  withinPortal: true,
+                  zIndex: 9999
+                }}
               />
             </Grid.Col>
           </Grid>
@@ -311,29 +346,45 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
                 }))}
                 searchable
                 clearable={false}
+                comboboxProps={{
+                  withinPortal: true,
+                  zIndex: 9999
+                }}
               />
             </Grid.Col>
             <Grid.Col span={4}>
               <DateInput
                 label="Start Date"
                 placeholder="Select start date"
-                value={formData.semester.startDate ? new Date(formData.semester.startDate) : null}
-                onChange={(date) => setFormData(prev => ({
-                  ...prev,
-                  semester: { 
-                    ...prev.semester, 
-                    startDate: date ? date.toISOString().split('T')[0] : ''
-                  }
-                }))}
+                value={formData.semester.startDate ? new Date(formData.semester.startDate + 'T00:00:00') : null}
+                onChange={(date) => {
+                  setFormData(prev => ({
+                    ...prev,
+                    semester: { 
+                      ...prev.semester, 
+                      startDate: date || ''
+                    }
+                  }));
+                }}
                 popoverProps={{
                   withinPortal: true,
                   position: 'bottom-start',
+                  zIndex: 9999,
+                  shadow: 'md',
                   styles: {
                     dropdown: {
-                      minWidth: '300px'
+                      minWidth: '300px',
+                      maxHeight: '400px',
+                      overflow: 'auto'
                     }
                   }
                 }}
+                styles={{
+                  input: {
+                    cursor: 'pointer'
+                  }
+                }}
+                clearable
                 required
               />
             </Grid.Col>
@@ -341,23 +392,35 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
               <DateInput
                 label="End Date"
                 placeholder="Select end date"
-                value={formData.semester.endDate ? new Date(formData.semester.endDate) : null}
-                onChange={(date) => setFormData(prev => ({
-                  ...prev,
-                  semester: { 
-                    ...prev.semester, 
-                    endDate: date ? date.toISOString().split('T')[0] : ''
-                  }
-                }))}
+                value={formData.semester.endDate ? new Date(formData.semester.endDate + 'T00:00:00') : null}
+                onChange={(date) => {
+                  setFormData(prev => ({
+                    ...prev,
+                    semester: { 
+                      ...prev.semester, 
+                      endDate: date || ''
+                    }
+                  }));
+                }}
                 popoverProps={{
                   withinPortal: true,
                   position: 'bottom-start',
+                  zIndex: 9999,
+                  shadow: 'md',
                   styles: {
                     dropdown: {
-                      minWidth: '300px'
+                      minWidth: '300px',
+                      maxHeight: '400px',
+                      overflow: 'auto'
                     }
                   }
                 }}
+                styles={{
+                  input: {
+                    cursor: 'pointer'
+                  }
+                }}
+                clearable
                 required
               />
             </Grid.Col>
@@ -381,6 +444,10 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
                   ...prev, 
                   dayOfWeek: parseInt(value || '1')
                 }))}
+                comboboxProps={{
+                  withinPortal: true,
+                  zIndex: 9999
+                }}
               />
             </Grid.Col>
             <Grid.Col span={2.5}>
@@ -421,7 +488,7 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
               <Button
                 onClick={handleAddScheduleSlot}
                 variant="light"
-                color="forest-green"
+                color="forestGreen"
                 size="sm"
                 styles={{
                   root: { marginTop: 'auto' }
@@ -464,10 +531,11 @@ export function CourseCreation({ opened, onClose, editingCourse }: CourseCreatio
               Cancel
             </Button>
             <Button 
+              variant="filled"
               onClick={handleSubmit}
               loading={loading}
               disabled={success}
-              color="forest-green"
+              color="forestGreen"
             >
               {editingCourse ? 'Update Course' : 'Create Course'}
             </Button>

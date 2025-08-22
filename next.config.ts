@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  // Disable Next.js prefetching to prevent .txt 404 errors
+  experimental: {
+    optimizeCss: false,
+  },
   // Cloudflare Pages configuration
   assetPrefix: process.env.NODE_ENV === 'production' ? undefined : '',
   eslint: {

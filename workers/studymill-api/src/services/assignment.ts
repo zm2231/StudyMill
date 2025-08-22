@@ -270,10 +270,11 @@ export class AssignmentService {
         limit
       ]);
       
-      return result.results as Assignment[];
+      return (result.results as Assignment[]) || [];
     } catch (error) {
       console.error('Failed to get due assignments:', error);
-      throw error;
+      // Return empty array instead of throwing to handle gracefully
+      return [];
     }
   }
 
@@ -297,21 +298,29 @@ export class AssignmentService {
       
       const result = await this.dbService.query(sql, [userId, now]);
       
+      const assignments = (result.results as Assignment[]) || [];
+      
       // Update overdue assignments' status
-      const overdueIds = (result.results as Assignment[]).map(a => a.id);
-      if (overdueIds.length > 0) {
+      if (assignments.length > 0) {
+        const overdueIds = assignments.map(a => a.id);
         const updateSql = `
           UPDATE assignments 
           SET status = 'overdue', updated_at = ? 
           WHERE id IN (${overdueIds.map(() => '?').join(',')}) AND user_id = ?
         `;
-        await this.dbService.query(updateSql, [now, ...overdueIds, userId]);
+        try {
+          await this.dbService.query(updateSql, [now, ...overdueIds, userId]);
+        } catch (updateError) {
+          console.error('Failed to update overdue status:', updateError);
+          // Don't fail the whole operation if status update fails
+        }
       }
       
-      return result.results as Assignment[];
+      return assignments;
     } catch (error) {
       console.error('Failed to get overdue assignments:', error);
-      throw error;
+      // Return empty array instead of throwing to handle gracefully
+      return [];
     }
   }
 

@@ -35,18 +35,18 @@ import { TodaysClasses as TodaysClassesType } from '@/types/course';
 interface TodaysClassesProps {
   onOpenAudioUpload: (courseId?: string) => void;
   onOpenDocumentUpload: (courseId?: string) => void;
+  refreshKey?: number; // Trigger refresh when this changes
 }
 
-export function TodaysClasses({ onOpenAudioUpload, onOpenDocumentUpload }: TodaysClassesProps) {
-  const { getTodaysClasses, getCurrentCourse, getUpcomingCourse, loading } = useCourses();
+export function TodaysClasses({ onOpenAudioUpload, onOpenDocumentUpload, refreshKey }: TodaysClassesProps) {
+  const { getTodaysClasses, getCurrentCourse, getUpcomingCourse, fetchCourses, loading } = useCourses();
   const [todaysClasses, setTodaysClasses] = useState<TodaysClassesType[]>([]);
   const [currentCourse, setCurrentCourse] = useState<any>(null);
   const [upcomingCourse, setUpcomingCourse] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadTodaysClasses();
-    loadCurrentAndUpcoming();
+    loadData();
     
     // Refresh every minute to update current/upcoming status
     const interval = setInterval(() => {
@@ -54,7 +54,19 @@ export function TodaysClasses({ onOpenAudioUpload, onOpenDocumentUpload }: Today
     }, 60000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [refreshKey]); // Re-run when refreshKey changes
+
+  const loadData = async () => {
+    try {
+      // First fetch courses to populate the course data
+      await fetchCourses();
+      // Then load today's specific classes and current/upcoming
+      await loadTodaysClasses();
+      loadCurrentAndUpcoming();
+    } catch (err) {
+      console.error('Error loading dashboard data:', err);
+    }
+  };
 
   const loadTodaysClasses = async () => {
     try {

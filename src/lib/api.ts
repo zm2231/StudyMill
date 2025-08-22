@@ -1071,9 +1071,6 @@ class ApiClient {
     strategy?: 'multipart' | 'presigned';
     onProgress?: (progress: { stage: string; percent: number; message?: string }) => void;
   } = {}) {
-    // Generate idempotency key for duplicate prevention
-    const idempotencyKey = crypto.randomUUID();
-    
     // Add strategy to form data if specified
     if (options.strategy) {
       formData.set('strategy', options.strategy);
@@ -1089,10 +1086,7 @@ class ApiClient {
       duplicate?: boolean;
     }>('/documents/upload', {
       method: 'POST',
-      body: formData,
-      headers: {
-        'Idempotency-Key': idempotencyKey
-      }
+      body: formData
     });
 
     // Start SSE progress monitoring if onProgress callback provided
@@ -1221,7 +1215,7 @@ class ApiClient {
       };
       message?: string;
       error?: string;
-    }>('/courses/today');
+    }>('/api/v1/courses/today');
   }
 
   // Course schedule management

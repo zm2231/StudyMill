@@ -71,7 +71,14 @@ export function DueSoonWidget() {
         setError(null);
         
         const response = await api.getDueAssignments({ days: 7, limit: 4 });
-        setDueItems(response.assignments);
+        
+        // Transform API data to ensure proper Date objects
+        const transformedAssignments = response.assignments.map(assignment => ({
+          ...assignment,
+          dueDate: assignment.dueDate ? new Date(assignment.dueDate) : null
+        }));
+        
+        setDueItems(transformedAssignments);
       } catch (err: any) {
         console.error('Failed to fetch due assignments:', err);
         // Show empty state instead of error for better UX

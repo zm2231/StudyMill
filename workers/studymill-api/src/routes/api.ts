@@ -1982,9 +1982,8 @@ assignmentsRoutes.get('/due', async (c) => {
         color: '#4A7C2A',
         code: assignment.course_name || 'COURSE'
       },
-      dueDate: assignment.due_date ? new Date(assignment.due_date) : null,
-      priority: assignment.status === 'overdue' ? 'high' : 
-               assignment.due_date && new Date(assignment.due_date).getTime() - Date.now() < 3 * 24 * 60 * 60 * 1000 ? 'high' : 'medium',
+      dueDate: assignment.due_date || null,
+      priority: assignment.status === 'overdue' ? 'high' : 'medium',
       completed: assignment.status === 'completed',
       progress: assignment.status === 'completed' ? 100 : 
                 assignment.status === 'in_progress' ? 50 : 0
@@ -2527,7 +2526,7 @@ activityRoutes.get('/recent', async (c) => {
         color: activity.course_color || '#4A7C2A',
         code: activity.course_code || 'COURSE'
       } : undefined,
-      timestamp: new Date(activity.created_at),
+      timestamp: activity.created_at,
       metadata: activity.metadata ? JSON.parse(activity.metadata) : {}
     }));
     

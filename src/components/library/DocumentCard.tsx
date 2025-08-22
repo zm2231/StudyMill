@@ -65,17 +65,7 @@ interface DocumentCardProps {
   onClick?: () => void;
 }
 
-// Mock data - will be replaced with real API data
-const mockDocument: Document = {
-  id: '1',
-  title: 'Physics 101 - Chapter 4 Lecture Slides',
-  type: 'pdf',
-  course: { name: 'Physics 101', color: '#4A7C2A', code: 'PHYS 101' },
-  tags: ['lecture', 'mechanics'],
-  updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
-  status: 'ready',
-  size: '2.4 MB'
-};
+// Real document data is passed via props from parent components
 
 function getDocumentIcon(type: string) {
   switch (type.toLowerCase()) {

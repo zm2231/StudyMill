@@ -127,10 +127,11 @@ export class ActivityService {
       params.push(limit);
       
       const result = await this.dbService.query(sql, params);
-      return result.results as Activity[];
+      return (result.results as Activity[]) || [];
     } catch (error) {
       console.error('Failed to get recent activities:', error);
-      throw error;
+      // Return empty array instead of throwing to handle gracefully
+      return [];
     }
   }
 
@@ -158,8 +159,9 @@ export class ActivityService {
       `;
       
       const result = await this.dbService.query(sql, [userId, limit]);
+      const items = (result.results as any[]) || [];
       
-      return (result.results as any[]).map(item => ({
+      return items.map(item => ({
         id: item.id,
         title: item.title,
         type: item.type,
@@ -169,12 +171,13 @@ export class ActivityService {
           color: item.course_color || '#4A7C2A',
           code: item.course_code || 'COURSE'
         } : undefined,
-        lastAccessed: new Date(item.last_accessed),
+        lastAccessed: item.last_accessed, // Keep as string for JSON serialization
         progress: item.progress
       }));
     } catch (error) {
       console.error('Failed to get recently accessed items:', error);
-      throw error;
+      // Return empty array instead of throwing to handle gracefully
+      return [];
     }
   }
 
@@ -201,18 +204,25 @@ export class ActivityService {
       `;
       
       const result = await this.dbService.query(sql, [userId, startDate.toISOString()]);
-      const stats = result.results?.[0] as any;
+      const stats = (result.results?.[0] as any) || {};
       
       return {
-        totalActivities: stats.total_activities || 0,
-        documentsUploaded: stats.documents_uploaded || 0,
-        itemsCreated: stats.items_created || 0,
-        audioProcessed: stats.audio_processed || 0,
-        documentsViewed: stats.documents_viewed || 0
+        totalActivities: Number(stats.total_activities) || 0,
+        documentsUploaded: Number(stats.documents_uploaded) || 0,
+        itemsCreated: Number(stats.items_created) || 0,
+        audioProcessed: Number(stats.audio_processed) || 0,
+        documentsViewed: Number(stats.documents_viewed) || 0
       };
     } catch (error) {
       console.error('Failed to get activity stats:', error);
-      throw error;
+      // Return default stats instead of throwing to handle gracefully
+      return {
+        totalActivities: 0,
+        documentsUploaded: 0,
+        itemsCreated: 0,
+        audioProcessed: 0,
+        documentsViewed: 0
+      };
     }
   }
 

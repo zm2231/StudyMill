@@ -30,6 +30,7 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
   const [showAudioUpload, setShowAudioUpload] = useState(false);
   const [showCourseCreation, setShowCourseCreation] = useState(false);
   const [preselectedCourseId, setPreselectedCourseId] = useState<string | undefined>();
+  const [refreshKey, setRefreshKey] = useState(0); // For triggering component refreshes
 
   // Handle upload actions - properly integrated with upload modals
   const handleAudioUpload = useCallback((courseId?: string) => {
@@ -44,6 +45,11 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
 
   const handleCourseCreation = useCallback(() => {
     setShowCourseCreation(true);
+  }, []);
+
+  const handleCourseCreated = useCallback(() => {
+    // Refresh all dashboard components that depend on course data
+    setRefreshKey(prev => prev + 1);
   }, []);
 
   // Placeholder handlers for features not yet implemented
@@ -74,6 +80,7 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
                 <TodaysClasses 
                   onOpenAudioUpload={handleAudioUpload}
                   onOpenDocumentUpload={handleDocumentUpload}
+                  refreshKey={refreshKey}
                 />
                 <ResumeSection />
                 <RecentSection />
@@ -105,6 +112,7 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
               <TodaysClasses 
                 onOpenAudioUpload={handleAudioUpload}
                 onOpenDocumentUpload={handleDocumentUpload}
+                refreshKey={refreshKey}
               />
               
               {/* Widget Row - Split layout */}
@@ -158,6 +166,7 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
       <CourseCreation 
         opened={showCourseCreation} 
         onClose={() => setShowCourseCreation(false)}
+        onSuccess={handleCourseCreated}
       />
     </Container>
   );

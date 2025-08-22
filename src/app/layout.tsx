@@ -8,6 +8,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import "./globals.css";
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
+import "@mantine/dates/styles.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
