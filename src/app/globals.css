@@ -283,37 +283,13 @@ blockquote {
   padding: 1rem 1rem 1rem 1.5rem;
 }
 
-/* Sidebar collapsed state fixes */
-.nav-item[data-collapsed="true"] .mantine-NavLink-label {
-  opacity: 0;
-  width: 0;
+/* Sidebar collapsed state: hide labels and center icons */
+.app-navbar[data-collapsed="true"] .mantine-Button-label {
+  display: none;
 }
 
-.nav-item[data-collapsed="true"] .nav-icon {
-  opacity: 1 !important;
-  flex: 0 0 20px;
-}
-
-.nav-icon svg {
-  display: block;
-  flex-shrink: 0;
-}
-
-/* Ensure icons stay visible in collapsed sidebar */
-aside[data-collapsed="true"] svg {
-  opacity: 1 !important;
-  visibility: visible !important;
-}
-
-/* SidebarNavigation: keep icon size consistent when collapsed */
-.sidebar-nav[data-collapsed="true"] .mantine-Button-root svg {
-  width: 22px !important;
-  height: 22px !important;
-  min-width: 22px;
-  min-height: 22px;
-  max-width: none;
-  max-height: none;
-  flex-shrink: 0;
+.app-navbar[data-collapsed="true"] .mantine-Button-section {
+  margin: 0;
 }
 
 /* Chat typing indicator animation */
