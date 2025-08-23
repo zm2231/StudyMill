@@ -300,6 +300,7 @@ blockquote {
 }
 
 /* Ensure icons stay visible in collapsed sidebar */
+.app-navbar[data-collapsed="true"] svg,
 aside[data-collapsed="true"] svg {
   opacity: 1 !important;
   visibility: visible !important;
