@@ -75,8 +75,29 @@ class ApiClient {
     
     // Load tokens from localStorage on initialization
     if (typeof window !== 'undefined') {
-      this.accessToken = localStorage.getItem('studymill_access_token');
-      this.refreshToken = localStorage.getItem('studymill_refresh_token');
+      // Try new format first, then fall back to old format for backward compatibility
+      this.accessToken = localStorage.getItem('studymill_access_token') || localStorage.getItem('token');
+      this.refreshToken = localStorage.getItem('studymill_refresh_token') || localStorage.getItem('refresh_token');
+      
+      // If we found tokens in old format, migrate them to new format
+      if (!localStorage.getItem('studymill_access_token') && localStorage.getItem('token')) {
+        const oldToken = localStorage.getItem('token');
+        const oldRefreshToken = localStorage.getItem('refresh_token');
+        const oldExpiresAt = localStorage.getItem('token_expires_at');
+        
+        if (oldToken) {
+          localStorage.setItem('studymill_access_token', oldToken);
+          localStorage.removeItem('token');
+        }
+        if (oldRefreshToken) {
+          localStorage.setItem('studymill_refresh_token', oldRefreshToken);
+          localStorage.removeItem('refresh_token');
+        }
+        if (oldExpiresAt) {
+          localStorage.setItem('studymill_token_expires_at', oldExpiresAt);
+          localStorage.removeItem('token_expires_at');
+        }
+      }
     }
   }
 
@@ -102,9 +123,15 @@ class ApiClient {
     this.refreshToken = null;
     
     if (typeof window !== 'undefined') {
+      // Remove new format tokens
       localStorage.removeItem('studymill_access_token');
       localStorage.removeItem('studymill_refresh_token');
       localStorage.removeItem('studymill_token_expires_at');
+      
+      // Remove old format tokens for backward compatibility
+      localStorage.removeItem('token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('token_expires_at');
     }
   }
 
@@ -124,7 +151,10 @@ class ApiClient {
    * Get authorization header
    */
   private getAuthHeader(): Record<string, string> {
-    if (!this.accessToken) return {};
+    if (!this.accessToken) {
+      console.warn('API Client: No access token available for authentication');
+      return {};
+    }
     return { Authorization: `Bearer ${this.accessToken}` };
   }
 
@@ -1503,6 +1533,42 @@ class ApiClient {
       console.error('Failed to create WebSocket connection:', error);
       if (onError) onError(error as Event);
       return null;
+    }
+  }
+
+  /**
+   * Logout current session
+   */
+  async logout(): Promise<void> {
+    try {
+      // Call logout endpoint to invalidate server-side session
+      await this.request('/api/v1/auth/logout', {
+        method: 'POST'
+      });
+    } catch (error) {
+      // Even if server logout fails, we should clear local tokens
+      console.warn('Server logout failed:', error);
+    } finally {
+      // Always clear local tokens
+      this.clearTokens();
+    }
+  }
+
+  /**
+   * Logout all sessions for this user
+   */
+  async logoutAll(): Promise<void> {
+    try {
+      // Call logout all endpoint to invalidate all server-side sessions
+      await this.request('/api/v1/auth/logout-all', {
+        method: 'POST'
+      });
+    } catch (error) {
+      // Even if server logout fails, we should clear local tokens
+      console.warn('Server logout all failed:', error);
+    } finally {
+      // Always clear local tokens
+      this.clearTokens();
     }
   }
 

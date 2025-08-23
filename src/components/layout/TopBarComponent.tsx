@@ -32,6 +32,7 @@ import {
 import { useMantineColorScheme, useComputedColorScheme } from '@mantine/core';
 import { useHotkeys } from 'react-hotkeys-hook';
 import Link from 'next/link';
+import { useAuth } from '@/hooks/useAuth';
 
 interface TopBarComponentProps {
   onMenuClick: () => void;
@@ -90,6 +91,7 @@ export function TopBarComponent({
   const [searchValue, setSearchValue] = useState('');
   const { setColorScheme } = useMantineColorScheme();
   const computedColorScheme = useComputedColorScheme('light');
+  const { logout } = useAuth();
   
   const breadcrumbs = generateBreadcrumbs(pathname);
 
@@ -266,9 +268,8 @@ export function TopBarComponent({
             <Menu.Item 
               leftSection={<IconLogout size={16} />}
               color="red"
-              onClick={() => {
-                // TODO: Implement logout
-                console.log('Logout clicked');
+              onClick={async () => {
+                await logout();
               }}
             >
               Sign out

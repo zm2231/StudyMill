@@ -49,7 +49,6 @@ app.use('*', csrf({
   origin: (origin) => {
     // Allow same-origin requests and approved origins
     const allowedOrigins = [
-      'http://localhost:3000',
       'https://studymill.ai',
       'https://www.studymill.ai',
       'https://studymill-frontend.pages.dev',

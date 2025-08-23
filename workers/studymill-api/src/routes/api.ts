@@ -15,6 +15,9 @@ import { ContextSynthesisService } from '../services/contextSynthesis';
 import { QueryProcessorService } from '../services/queryProcessor';
 import { memoryRoutes } from './memories';
 import { notesRoutes } from './notes';
+import plannerRoutes from './planner';
+import { semestersRouter } from './semesters';
+import { tagsRouter } from './tags';
 
 export const apiRoutes = new Hono();
 
@@ -2873,3 +2876,6 @@ apiRoutes.route('/assignments', assignmentsRoutes);
 apiRoutes.route('/flashcards', flashcardsRoutes);
 apiRoutes.route('/activity', activityRoutes);
 apiRoutes.route('/ai', aiRoutes);
+apiRoutes.route('/planner', plannerRoutes);
+apiRoutes.route('/semesters', semestersRouter);
+apiRoutes.route('/tags', tagsRouter);

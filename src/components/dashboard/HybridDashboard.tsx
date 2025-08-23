@@ -7,13 +7,13 @@ import { useRouter } from 'next/navigation';
 import { TodaysClasses } from './TodaysClasses';
 import { ResumeSection } from './ResumeSection';
 import { RecentSection } from './RecentSection';
-import { DueSoonWidget } from './DueSoonWidget';
+import { ThisWeekWidget } from './ThisWeekWidget';
 import { QuickAddWidget } from './QuickAddWidget';
 import { FocusTimerWidget } from './FocusTimerWidget';
-import { TipsWidget } from './TipsWidget';
-import { DocumentUpload } from '../library/DocumentUpload';
-import { AudioUpload } from '../library/AudioUpload';
+import { DocumentUploader } from '../upload/DocumentUploader';
+import { useDocumentUpload } from '@/hooks/useDocumentUpload';
 import { CourseCreation } from '../courses/CourseCreation';
+import { usePersistentAudio } from '@/contexts/PersistentAudioContext';
 
 interface HybridDashboardProps {
   className?: string;
@@ -24,24 +24,27 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
   // Critical 1200px breakpoint for hybrid layout
   const isWideScreen = useMediaQuery('(min-width: 75em)'); // 1200px
   const router = useRouter();
+  
+  // Use unified document upload hook
+  const documentUpload = useDocumentUpload({
+    onSuccess: () => {
+      setRefreshKey(prev => prev + 1);
+    }
+  });
 
   // Modal states
-  const [showDocumentUpload, setShowDocumentUpload] = useState(false);
-  const [showAudioUpload, setShowAudioUpload] = useState(false);
   const [showCourseCreation, setShowCourseCreation] = useState(false);
-  const [preselectedCourseId, setPreselectedCourseId] = useState<string | undefined>();
   const [refreshKey, setRefreshKey] = useState(0); // For triggering component refreshes
+  const { openRecorder } = usePersistentAudio();
 
   // Handle upload actions - properly integrated with upload modals
-  const handleAudioUpload = useCallback((courseId?: string) => {
-    setPreselectedCourseId(courseId);
-    setShowAudioUpload(true);
-  }, []);
+  const handleAudioUpload = useCallback(() => {
+    openRecorder();
+  }, [openRecorder]);
 
   const handleDocumentUpload = useCallback((courseId?: string) => {
-    setPreselectedCourseId(courseId);
-    setShowDocumentUpload(true);
-  }, []);
+    documentUpload.open(courseId);
+  }, [documentUpload]);
 
   const handleCourseCreation = useCallback(() => {
     setShowCourseCreation(true);
@@ -90,7 +93,7 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
             {/* Right Column: Widgets */}
             <Grid.Col span={4}>
               <Stack gap="lg">
-                <DueSoonWidget />
+                <ThisWeekWidget />
                 <QuickAddWidget 
                   onOpenDocumentUpload={handleDocumentUpload}
                   onOpenAudioUpload={handleAudioUpload}
@@ -100,7 +103,6 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
                   onOpenFlashcardCreation={handleFlashcardCreation}
                 />
                 <FocusTimerWidget />
-                <TipsWidget />
               </Stack>
             </Grid.Col>
           </>
@@ -118,7 +120,7 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
               {/* Widget Row - Split layout */}
               <Grid gutter="md">
                 <Grid.Col span={6}>
-                  <DueSoonWidget />
+                  <ThisWeekWidget />
                 </Grid.Col>
                 <Grid.Col span={6}>
                   <QuickAddWidget 
@@ -136,32 +138,22 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
               <ResumeSection />
               <RecentSection />
               
-              {/* Bottom Widget Row */}
-              <Grid gutter="md">
-                <Grid.Col span={6}>
-                  <FocusTimerWidget />
-                </Grid.Col>
-                <Grid.Col span={6}>
-                  <TipsWidget />
-                </Grid.Col>
-              </Grid>
+              {/* Bottom Widget */}
+              <FocusTimerWidget />
             </Stack>
           </Grid.Col>
         )}
       </Grid>
       
       {/* Upload Modals */}
-      <DocumentUpload 
-        opened={showDocumentUpload} 
-        onClose={() => setShowDocumentUpload(false)}
-        preselectedCourseId={preselectedCourseId}
+      <DocumentUploader 
+        opened={documentUpload.isOpen} 
+        onClose={documentUpload.close}
+        preselectedCourseId={documentUpload.preselectedCourseId}
+        onSuccess={documentUpload.handleSuccess}
+        onError={documentUpload.handleError}
       />
       
-      <AudioUpload 
-        opened={showAudioUpload} 
-        onClose={() => setShowAudioUpload(false)}
-        preselectedCourseId={preselectedCourseId}
-      />
       
       <CourseCreation 
         opened={showCourseCreation} 

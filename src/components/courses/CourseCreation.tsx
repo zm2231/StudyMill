@@ -34,11 +34,13 @@ import {
 import { DateInput } from '@mantine/dates';
 import { useCourses, CreateCourseData } from '@/hooks/useCourses';
 import { CourseScheduleTime, CourseSemester } from '@/types/course';
+import { SemesterPicker } from './SemesterPicker';
 
 interface CourseCreationProps {
   opened: boolean;
   onClose: () => void;
-  editingCourse?: any; // For future edit functionality
+  editMode?: boolean;
+  initialData?: any; // For edit functionality
   onSuccess?: () => void; // Called after successful course creation
 }
 
@@ -68,18 +70,19 @@ const COMMON_SEMESTERS = [
   'Fall 2027'
 ];
 
-export function CourseCreation({ opened, onClose, editingCourse, onSuccess }: CourseCreationProps) {
+export function CourseCreation({ opened, onClose, editMode, initialData, onSuccess }: CourseCreationProps) {
   const { createCourse, updateCourse, loading } = useCourses();
   
-  // Form state
-  const [formData, setFormData] = useState<CreateCourseData>({
-    name: '',
-    code: '',
-    color: PRESET_COLORS[0],
-    description: '',
-    instructor: '',
-    credits: 3,
-    schedule: [],
+  // Form state - extended to include semester_id
+  const [formData, setFormData] = useState<any>({
+    name: initialData?.name || '',
+    code: initialData?.code || '',
+    color: initialData?.color || PRESET_COLORS[0],
+    description: initialData?.description || '',
+    instructor: initialData?.instructor || '',
+    credits: initialData?.credits || 3,
+    schedule: initialData?.schedule ? JSON.parse(initialData.schedule) : [],
+    semester_id: initialData?.semester_id || '',
     semester: {
       startDate: '',
       endDate: '',
@@ -151,14 +154,14 @@ export function CourseCreation({ opened, onClose, editingCourse, onSuccess }: Co
 
     // Note: Schedule is optional during course creation - can be added later
 
-    if (!formData.semester.startDate || !formData.semester.endDate) {
-      setError('Semester start and end dates are required');
+    if (!formData.semester_id) {
+      setError('Please select a semester');
       return;
     }
 
     try {
-      if (editingCourse) {
-        await updateCourse(editingCourse.id, formData);
+      if (editMode && initialData) {
+        await updateCourse(initialData.id, formData);
       } else {
         await createCourse(formData);
       }
@@ -211,7 +214,7 @@ export function CourseCreation({ opened, onClose, editingCourse, onSuccess }: Co
     <Modal
       opened={opened}
       onClose={handleClose}
-      title={editingCourse ? "Edit Course" : "Create Course"}
+      title={editMode ? "Edit Course" : "Create Course"}
       size="lg"
       radius="md"
       centered
@@ -259,7 +262,7 @@ export function CourseCreation({ opened, onClose, editingCourse, onSuccess }: Co
 
         {success && (
           <Alert icon={<IconCheck size={16} />} color="green" variant="light">
-            Course {editingCourse ? 'updated' : 'created'} successfully!
+            Course {editMode ? 'updated' : 'created'} successfully!
           </Alert>
         )}
 
@@ -333,98 +336,12 @@ export function CourseCreation({ opened, onClose, editingCourse, onSuccess }: Co
         {/* Semester Information */}
         <Stack gap="md">
           <Text fw={500}>Semester Details</Text>
-
-          <Grid>
-            <Grid.Col span={4}>
-              <Select
-                label="Semester"
-                data={COMMON_SEMESTERS}
-                value={formData.semester.name}
-                onChange={(value) => setFormData(prev => ({
-                  ...prev,
-                  semester: { ...prev.semester, name: value || 'Fall 2025' }
-                }))}
-                searchable
-                clearable={false}
-                comboboxProps={{
-                  withinPortal: true,
-                  zIndex: 9999
-                }}
-              />
-            </Grid.Col>
-            <Grid.Col span={4}>
-              <DateInput
-                label="Start Date"
-                placeholder="Select start date"
-                value={formData.semester.startDate ? new Date(formData.semester.startDate + 'T00:00:00') : null}
-                onChange={(date) => {
-                  setFormData(prev => ({
-                    ...prev,
-                    semester: { 
-                      ...prev.semester, 
-                      startDate: date || ''
-                    }
-                  }));
-                }}
-                popoverProps={{
-                  withinPortal: true,
-                  position: 'bottom-start',
-                  zIndex: 9999,
-                  shadow: 'md',
-                  styles: {
-                    dropdown: {
-                      minWidth: '300px',
-                      maxHeight: '400px',
-                      overflow: 'auto'
-                    }
-                  }
-                }}
-                styles={{
-                  input: {
-                    cursor: 'pointer'
-                  }
-                }}
-                clearable
-                required
-              />
-            </Grid.Col>
-            <Grid.Col span={4}>
-              <DateInput
-                label="End Date"
-                placeholder="Select end date"
-                value={formData.semester.endDate ? new Date(formData.semester.endDate + 'T00:00:00') : null}
-                onChange={(date) => {
-                  setFormData(prev => ({
-                    ...prev,
-                    semester: { 
-                      ...prev.semester, 
-                      endDate: date || ''
-                    }
-                  }));
-                }}
-                popoverProps={{
-                  withinPortal: true,
-                  position: 'bottom-start',
-                  zIndex: 9999,
-                  shadow: 'md',
-                  styles: {
-                    dropdown: {
-                      minWidth: '300px',
-                      maxHeight: '400px',
-                      overflow: 'auto'
-                    }
-                  }
-                }}
-                styles={{
-                  input: {
-                    cursor: 'pointer'
-                  }
-                }}
-                clearable
-                required
-              />
-            </Grid.Col>
-          </Grid>
+          
+          <SemesterPicker
+            value={formData.semester_id}
+            onChange={(value) => setFormData(prev => ({ ...prev, semester_id: value }))}
+            required
+          />
         </Stack>
 
         <Divider />
@@ -537,7 +454,7 @@ export function CourseCreation({ opened, onClose, editingCourse, onSuccess }: Co
               disabled={success}
               color="forestGreen"
             >
-              {editingCourse ? 'Update Course' : 'Create Course'}
+              {editMode ? 'Update Course' : 'Create Course'}
             </Button>
           </Group>
         </Group>

@@ -5,6 +5,8 @@ import { Notifications } from "@mantine/notifications";
 import { ModalsProvider } from "@mantine/modals";
 import { theme } from "@/lib/theme";
 import { AuthProvider } from "@/hooks/useAuth";
+import { TimerProvider } from "@/contexts/TimerContext";
+import { PersistentAudioProvider } from "@/contexts/PersistentAudioContext";
 import "./globals.css";
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
@@ -40,10 +42,14 @@ export default function RootLayout({
       >
         <MantineProvider theme={theme}>
           <ModalsProvider>
-            <AuthProvider>
-              <Notifications />
-              {children}
-            </AuthProvider>
+            <TimerProvider>
+              <PersistentAudioProvider>
+                <AuthProvider>
+                  <Notifications />
+                  {children}
+                </AuthProvider>
+              </PersistentAudioProvider>
+            </TimerProvider>
           </ModalsProvider>
         </MantineProvider>
       </body>

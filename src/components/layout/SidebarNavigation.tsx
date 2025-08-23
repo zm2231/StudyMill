@@ -4,7 +4,6 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useUpload } from '@/hooks/useUpload';
-import { useAudioUpload } from '@/hooks/useAudioUpload';
 import { useCourseCreation } from '@/hooks/useCourseCreation';
 import { 
   Stack, 
@@ -29,8 +28,13 @@ import {
   IconSettings,
   IconUser,
   IconLogout,
-  IconMicrophone
+  IconMicrophone,
+  IconClock
 } from '@tabler/icons-react';
+import { TimerMini } from '@/components/timer/TimerMini';
+import { useTimerContext } from '@/contexts/TimerContext';
+import { usePersistentAudio } from '@/contexts/PersistentAudioContext';
+import { AudioRecordingMini } from '@/components/audio/AudioRecordingMini';
 
 interface SidebarNavigationProps {
   collapsed: boolean;
@@ -103,7 +107,7 @@ const quickAddActions = [
   { 
     id: 'upload-audio', 
     label: 'Record Audio', 
-    description: 'Voice notes and lectures',
+    description: 'Persistent recording across pages',
     icon: IconMicrophone 
   },
   { 
@@ -117,6 +121,12 @@ const quickAddActions = [
     label: 'Add Event', 
     description: 'Study time or deadlines',
     icon: IconCalendar 
+  },
+  { 
+    id: 'focus-timer', 
+    label: 'Focus Timer', 
+    description: 'Start a Pomodoro session',
+    icon: IconClock 
   }
 ];
 
@@ -124,6 +134,8 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
   const pathname = usePathname();
   const router = useRouter();
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const { openFullTimer } = useTimerContext();
+  const { openRecorder } = usePersistentAudio();
   const { openUpload, UploadModal } = useUpload({
     onUploadComplete: (documentIds) => {
       // Navigate to library to show uploaded documents
@@ -131,12 +143,6 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
     }
   });
 
-  const { openAudioUpload, AudioUploadModal } = useAudioUpload({
-    onUploadComplete: () => {
-      // Navigate to library to show processed audio
-      router.push('/library');
-    }
-  });
 
   const { openCourseCreation, CourseCreationModal } = useCourseCreation({
     onCourseCreated: () => {
@@ -151,13 +157,17 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
         openUpload();
         break;
       case 'upload-audio':
-        openAudioUpload();
+        openRecorder();
+        setQuickAddOpen(false);
         break;
       case 'create-course':
         openCourseCreation();
         break;
       case 'schedule-event':
         router.push('/planner');
+        break;
+      case 'focus-timer':
+        openFullTimer();
         break;
       default:
         console.log(`Unknown action: ${actionId}`);
@@ -166,7 +176,7 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
 
   return (
     <>
-      <Stack h="100%" gap="md">
+      <Stack h="100%" gap="md" className="sidebar-nav" data-collapsed={collapsed}>
         {/* Sidebar Header */}
         <Group>
           {!collapsed && (
@@ -187,7 +197,7 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
           justify={collapsed ? 'center' : 'start'}
           px={collapsed ? 'sm' : 'md'}
         >
-          {collapsed ? <IconPlus size={22} /> : 'Quick Add'}
+          {collapsed ? <IconPlus size={22} color="#FFFFFF" /> : 'Quick Add'}
         </Button>
 
         <Divider />
@@ -234,7 +244,10 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
                 }}
               >
                 {collapsed ? (
-                  <Icon size={22} />
+                  <Icon 
+                    size={22} 
+                    color={isActive ? 'var(--forest-green-primary)' : 'var(--sanctuary-text-secondary)'} 
+                  />
                 ) : (
                   <Stack gap={2} align="flex-start">
                     <Text size="sm" fw={isActive ? 600 : 500}>
@@ -258,6 +271,12 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
 
         <Divider />
 
+        {/* Timer Mini (when active) */}
+        <TimerMini onMaximize={openFullTimer} />
+
+        {/* Audio Recording Mini (when active) */}
+        <AudioRecordingMini onMaximize={openRecorder} />
+
         {/* User Section */}
         <Stack gap="xs">
           {/* Profile */}
@@ -273,7 +292,7 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
               size="sm"
               px={collapsed ? 'xs' : 'md'}
             >
-              {collapsed ? <IconUser size={22} /> : 'Profile'}
+              {collapsed ? <IconUser size={22} color={'var(--sanctuary-text-secondary)'} /> : 'Profile'}
             </Button>
           </Tooltip>
 
@@ -290,7 +309,7 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
               size="sm"
               px={collapsed ? 'xs' : 'md'}
             >
-              {collapsed ? <IconSettings size={22} /> : 'Settings'}
+              {collapsed ? <IconSettings size={22} color={'var(--sanctuary-text-secondary)'} /> : 'Settings'}
             </Button>
           </Tooltip>
 
@@ -309,7 +328,7 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
                 console.log('Sign out clicked');
               }}
             >
-              {collapsed ? <IconLogout size={22} /> : 'Sign Out'}
+              {collapsed ? <IconLogout size={22} color={'var(--muted-terracotta)'} /> : 'Sign Out'}
             </Button>
           </Tooltip>
         </Stack>
@@ -352,7 +371,6 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
 
       {/* Upload Modals */}
       <UploadModal />
-      <AudioUploadModal />
       <CourseCreationModal />
     </>
   );

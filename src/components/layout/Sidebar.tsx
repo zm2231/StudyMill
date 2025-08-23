@@ -14,13 +14,18 @@ import {
   IconHome,
   IconSettings,
   IconUser,
-  IconLogout
+  IconLogout,
+  IconClock
 } from '@tabler/icons-react';
+import { useDocumentUpload } from '@/hooks/useDocumentUpload';
+import { DocumentUploader } from '@/components/upload/DocumentUploader';
+import { TimerMini } from '@/components/timer/TimerMini';
 
 interface SidebarProps {
   collapsed: boolean;
   onCollapse: (collapsed: boolean) => void;
   mobile?: boolean;
+  onTimerMaximize?: () => void;
 }
 
 interface NavItem {
@@ -70,15 +75,17 @@ const navItems: NavItem[] = [
   }
 ];
 
-export function Sidebar({ collapsed, onCollapse, mobile = false }: SidebarProps) {
+export function Sidebar({ collapsed, onCollapse, mobile = false, onTimerMaximize }: SidebarProps) {
   const pathname = usePathname();
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const documentUpload = useDocumentUpload();
 
   const sidebarWidth = collapsed ? 'var(--sidebar-collapsed-width)' : 'var(--sidebar-width)';
 
   return (
     <>
       <aside
+        data-collapsed={collapsed}
         className={`
           fixed top-16 left-0 h-[calc(100vh-4rem)] bg-[var(--sanctuary-card)] 
           border-r border-[var(--border-light)] z-30 transition-all duration-[var(--transition-medium)]
@@ -167,6 +174,9 @@ export function Sidebar({ collapsed, onCollapse, mobile = false }: SidebarProps)
             })}
           </nav>
 
+          {/* Timer Mini (when active) */}
+          <TimerMini onMaximize={onTimerMaximize} />
+
           {/* User Section */}
           <div className="p-4 border-t border-[var(--border-light)] space-y-2">
             <Link
@@ -221,7 +231,13 @@ export function Sidebar({ collapsed, onCollapse, mobile = false }: SidebarProps)
               Quick Add
             </h3>
             <div className="space-y-3">
-              <button className="w-full flex items-center gap-3 p-3 rounded-lg border border-[var(--border-light)] hover:bg-[var(--sanctuary-surface)] transition-colors">
+              <button 
+                onClick={() => {
+                  setShowQuickAdd(false);
+                  documentUpload.open();
+                }}
+                className="w-full flex items-center gap-3 p-3 rounded-lg border border-[var(--border-light)] hover:bg-[var(--sanctuary-surface)] transition-colors"
+              >
                 <IconBooks size={20} />
                 <div className="text-left">
                   <div className="font-medium">Upload Document</div>
@@ -242,6 +258,19 @@ export function Sidebar({ collapsed, onCollapse, mobile = false }: SidebarProps)
                   <div className="text-sm text-[var(--sanctuary-text-secondary)]">Schedule study time or deadlines</div>
                 </div>
               </button>
+              <button 
+                onClick={() => {
+                  setShowQuickAdd(false);
+                  onTimerMaximize?.();
+                }}
+                className="w-full flex items-center gap-3 p-3 rounded-lg border border-[var(--border-light)] hover:bg-[var(--sanctuary-surface)] transition-colors"
+              >
+                <IconClock size={20} />
+                <div className="text-left">
+                  <div className="font-medium">Focus Timer</div>
+                  <div className="text-sm text-[var(--sanctuary-text-secondary)]">Start a Pomodoro session</div>
+                </div>
+              </button>
             </div>
             <div className="mt-6 flex justify-end">
               <button
@@ -254,6 +283,15 @@ export function Sidebar({ collapsed, onCollapse, mobile = false }: SidebarProps)
           </div>
         </div>
       )}
+
+      {/* Unified Document Uploader */}
+      <DocumentUploader
+        opened={documentUpload.isOpen}
+        onClose={documentUpload.close}
+        preselectedCourseId={documentUpload.preselectedCourseId}
+        onSuccess={documentUpload.handleSuccess}
+        onError={documentUpload.handleError}
+      />
     </>
   );
 }

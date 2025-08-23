@@ -41,13 +41,8 @@ export function useWebSocketChat({
     if (typeof window === 'undefined') return '';
     
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const hostname = window.location.hostname;
     
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return `${protocol}//localhost:8787`;
-    }
-    
-    // Production API URL
+    // Always use production API URL
     return `${protocol}//studymill-api-production.merchantzains.workers.dev`;
   };
 
