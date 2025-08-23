@@ -9,6 +9,9 @@ export interface Course {
   color?: string;
   instructor?: string;
   credits?: number;
+  semester_id?: string;
+  archived?: boolean;
+  schedule?: string; // JSON string of schedule times
   created_at: string;
   updated_at: string;
 }
@@ -20,6 +23,8 @@ export interface CreateCourseData {
   color?: string;
   instructor?: string;
   credits?: number;
+  semester_id?: string;
+  schedule?: any[]; // Will be JSON stringified
 }
 
 export interface UpdateCourseData {
@@ -29,6 +34,9 @@ export interface UpdateCourseData {
   color?: string;
   instructor?: string;
   credits?: number;
+  semester_id?: string;
+  archived?: boolean;
+  schedule?: any[]; // Will be JSON stringified
 }
 
 export class DatabaseService {
@@ -38,19 +46,23 @@ export class DatabaseService {
   async createCourse(userId: string, data: CreateCourseData): Promise<Course> {
     const id = 'course_' + crypto.randomUUID();
     const now = new Date().toISOString();
+    const scheduleJson = data.schedule ? JSON.stringify(data.schedule) : null;
     
     const result = await this.db.prepare(`
-      INSERT INTO courses (id, user_id, name, description, code, color, instructor, credits, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO courses (id, user_id, name, description, code, color, instructor, credits, semester_id, schedule, archived, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       id, 
       userId, 
       data.name, 
       data.description || null,
       data.code || null,
-      data.color || '#3b82f6',
+      data.color || '#4A7C2A', // Forest green default
       data.instructor || null,
       data.credits || 3,
+      data.semester_id || null,
+      scheduleJson,
+      false, // not archived by default
       now, 
       now
     ).run();
@@ -65,21 +77,32 @@ export class DatabaseService {
       name: data.name,
       description: data.description,
       code: data.code,
-      color: data.color || '#3b82f6',
+      color: data.color || '#4A7C2A',
       instructor: data.instructor,
       credits: data.credits || 3,
+      semester_id: data.semester_id,
+      schedule: scheduleJson || undefined,
+      archived: false,
       created_at: now,
       updated_at: now
     };
   }
 
-  async getCoursesByUserId(userId: string): Promise<Course[]> {
-    const result = await this.db.prepare(`
-      SELECT * FROM courses 
-      WHERE user_id = ? 
-      ORDER BY created_at DESC
-    `).bind(userId).all();
+  async getCoursesByUserId(userId: string, includeArchived: boolean = false): Promise<Course[]> {
+    const query = includeArchived ? 
+      `SELECT * FROM courses WHERE user_id = ? ORDER BY created_at DESC` :
+      `SELECT * FROM courses WHERE user_id = ? AND (archived = FALSE OR archived IS NULL) ORDER BY created_at DESC`;
+    
+    const result = await this.db.prepare(query).bind(userId).all();
+    return result.results as Course[];
+  }
 
+  async getCoursesBySemester(userId: string, semesterId: string, includeArchived: boolean = false): Promise<Course[]> {
+    const query = includeArchived ?
+      `SELECT * FROM courses WHERE user_id = ? AND semester_id = ? ORDER BY created_at DESC` :
+      `SELECT * FROM courses WHERE user_id = ? AND semester_id = ? AND (archived = FALSE OR archived IS NULL) ORDER BY created_at DESC`;
+    
+    const result = await this.db.prepare(query).bind(userId, semesterId).all();
     return result.results as Course[];
   }
 
@@ -105,12 +128,15 @@ export class DatabaseService {
     const color = data.color !== undefined ? data.color : existing.color;
     const instructor = data.instructor !== undefined ? data.instructor : existing.instructor;
     const credits = data.credits !== undefined ? data.credits : existing.credits;
+    const semester_id = data.semester_id !== undefined ? data.semester_id : existing.semester_id;
+    const archived = data.archived !== undefined ? data.archived : existing.archived;
+    const schedule = data.schedule !== undefined ? JSON.stringify(data.schedule) : existing.schedule;
 
     const result = await this.db.prepare(`
       UPDATE courses 
-      SET name = ?, description = ?, code = ?, color = ?, instructor = ?, credits = ?, updated_at = ?
+      SET name = ?, description = ?, code = ?, color = ?, instructor = ?, credits = ?, semester_id = ?, archived = ?, schedule = ?, updated_at = ?
       WHERE id = ? AND user_id = ?
-    `).bind(name, description, code, color, instructor, credits, now, courseId, userId).run();
+    `).bind(name, description, code, color, instructor, credits, semester_id, archived, schedule, now, courseId, userId).run();
 
     if (!result.success) {
       throw new Error('Failed to update course');
@@ -125,6 +151,9 @@ export class DatabaseService {
       color,
       instructor,
       credits,
+      semester_id,
+      archived,
+      schedule,
       created_at: existing.created_at,
       updated_at: now
     };
@@ -139,11 +168,12 @@ export class DatabaseService {
     return result.success && result.changes > 0;
   }
 
-  async getCourseCount(userId: string): Promise<number> {
-    const result = await this.db.prepare(`
-      SELECT COUNT(*) as count FROM courses WHERE user_id = ?
-    `).bind(userId).first();
-
+  async getCourseCount(userId: string, includeArchived: boolean = false): Promise<number> {
+    const query = includeArchived ?
+      `SELECT COUNT(*) as count FROM courses WHERE user_id = ?` :
+      `SELECT COUNT(*) as count FROM courses WHERE user_id = ? AND (archived = FALSE OR archived IS NULL)`;
+    
+    const result = await this.db.prepare(query).bind(userId).first();
     return (result as any)?.count || 0;
   }
 

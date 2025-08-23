@@ -129,14 +129,12 @@ export function secureCORS() {
     const isDevelopment = c.env?.ENVIRONMENT === 'development';
 
     // Define allowed origins based on environment
-    const allowedOrigins = isDevelopment 
-      ? ['http://localhost:3000', 'http://127.0.0.1:3000']
-      : [
-          'https://studymill.ai',
-          'https://www.studymill.ai',
-          'https://studymill-frontend.pages.dev',
-          'https://studymill.pages.dev',
-          'https://a8b6094b.studymill-frontend.pages.dev'
+    const allowedOrigins = [
+      'https://studymill.ai',
+      'https://www.studymill.ai',
+      'https://studymill-frontend.pages.dev',
+      'https://studymill.pages.dev',
+      'https://a8b6094b.studymill-frontend.pages.dev'
         ];
 
     // Add custom domains from environment

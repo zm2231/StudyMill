@@ -14,6 +14,8 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { SidebarNavigation } from './SidebarNavigation';
 import { TopBarComponent } from './TopBarComponent';
 import { ContextPanel } from './ContextPanel';
+import { TimerModal } from '@/components/timer/TimerModal';
+import { GlobalAudioRecorderOverlay } from '@/components/audio/GlobalAudioRecorderOverlay';
 
 interface AppShellProps {
   children: ReactNode;
@@ -84,7 +86,7 @@ export function AppShell({
       </MantineAppShell.Header>
 
       {/* Sidebar Navigation */}
-      <MantineAppShell.Navbar p="md">
+      <MantineAppShell.Navbar p="md" className="app-navbar" data-collapsed={sidebarCollapsed}>
         <SidebarNavigation 
           collapsed={sidebarCollapsed}
           onCollapse={setSidebarCollapsed}
@@ -105,6 +107,12 @@ export function AppShell({
       <MantineAppShell.Main>
         {children}
       </MantineAppShell.Main>
+
+      {/* Global Timer Modal */}
+      <TimerModal />
+
+      {/* Global Audio Recorder Overlay */}
+      <GlobalAudioRecorderOverlay />
     </MantineAppShell>
   );
 }

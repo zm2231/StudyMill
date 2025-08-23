@@ -34,20 +34,12 @@ export function useProcessingPreferences() {
 
       // Try to load from API
       try {
-        const response = await fetch('/api/user/processing-preferences', {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.preferences) {
-            setPreferences(data.preferences);
-            // Sync with localStorage
-            localStorage.setItem('processingPreferences', JSON.stringify(data.preferences));
-          }
+        const { api } = await import('@/lib/api');
+        const data = await api.request<{ success: boolean; preferences: any }>('/api/v1/user/processing-preferences');
+        if (data.success && data.preferences) {
+          setPreferences(data.preferences);
+          // Sync with localStorage
+          localStorage.setItem('processingPreferences', JSON.stringify(data.preferences));
         }
       } catch (apiError) {
         console.warn('Preferences API not available yet, using localStorage');
@@ -64,19 +56,11 @@ export function useProcessingPreferences() {
     try {
       // Try to get real cost data from API
       try {
-        const response = await fetch('/api/user/processing-cost-summary', {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.costSummary) {
-            setCostSummary(data.costSummary);
-            return;
-          }
+        const { api } = await import('@/lib/api');
+        const data = await api.request<{ success: boolean; costSummary: any }>('/api/v1/user/processing-cost-summary');
+        if (data.success && data.costSummary) {
+          setCostSummary(data.costSummary);
+          return;
         }
       } catch (apiError) {
         console.warn('Cost summary API not available yet, using defaults');
@@ -107,18 +91,11 @@ export function useProcessingPreferences() {
       
       // Try to save to API
       try {
-        const response = await fetch('/api/user/processing-preferences', {
+        const { api } = await import('@/lib/api');
+        await api.request('/api/v1/user/processing-preferences', {
           method: 'PUT',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          },
-          body: JSON.stringify(newPreferences)
+          body: newPreferences
         });
-        
-        if (!response.ok && response.status !== 404) {
-          console.warn('Failed to save preferences to server, using localStorage only');
-        }
       } catch (apiError) {
         console.warn('Preferences API not available yet, using localStorage only');
       }

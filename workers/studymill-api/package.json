@@ -20,11 +20,13 @@
 	},
 	"dependencies": {
 		"@cloudflare/ai": "^1.2.2",
+		"@hono/zod-validator": "^0.7.2",
 		"bcryptjs": "^3.0.2",
 		"cheerio": "^1.0.0-rc.12",
 		"groq": "^4.4.1",
 		"groq-sdk": "^0.30.0",
 		"hono": "^4.9.2",
+		"js-pptx": "github:won21kr/js-pptx",
 		"jsonwebtoken": "^9.0.2",
 		"mammoth": "^1.6.0",
 		"pdfjs-dist": "^5.4.54",
