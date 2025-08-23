@@ -190,14 +190,14 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
         <Button
           onClick={() => setQuickAddOpen(true)}
           fullWidth={!collapsed}
-          leftSection={collapsed ? undefined : <IconPlus size={20} />}
+          leftSection={<IconPlus size={20} />}
           variant="filled"
           color="forestGreen"
           size="md"
           justify={collapsed ? 'center' : 'start'}
           px={collapsed ? 'sm' : 'md'}
         >
-          {collapsed ? <IconPlus size={22} color="#FFFFFF" /> : 'Quick Add'}
+          Quick Add
         </Button>
 
         <Divider />
@@ -208,6 +208,10 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
             const Icon = hub.icon;
             const isActive = pathname === hub.href || pathname.startsWith(hub.href + '/');
             
+            const iconColor = isActive
+              ? 'var(--forest-green-primary)'
+              : 'var(--sanctuary-text-secondary)';
+
             const navItem = (
               <Button
                 component={Link}
@@ -216,7 +220,7 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
                 variant={isActive ? 'light' : 'subtle'}
                 color={isActive ? 'forestGreen' : 'gray'}
                 fullWidth={!collapsed}
-                leftSection={collapsed ? undefined : <Icon size={20} />}
+                leftSection={<Icon size={20} color={iconColor} />}
                 rightSection={!collapsed && hub.badge ? (
                   <Badge size="xs" variant="light">
                     {hub.badge}
@@ -228,12 +232,12 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
                 styles={{
                   root: {
                     border: isActive ? '1px solid var(--forest-green-light)' : 'none',
-                    backgroundColor: isActive 
-                      ? 'rgba(74, 124, 42, 0.1)' 
+                    backgroundColor: isActive
+                      ? 'rgba(74, 124, 42, 0.1)'
                       : undefined,
                     '&:hover': {
-                      backgroundColor: isActive 
-                        ? 'rgba(74, 124, 42, 0.15)' 
+                      backgroundColor: isActive
+                        ? 'rgba(74, 124, 42, 0.15)'
                         : undefined
                     }
                   },
@@ -243,21 +247,14 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
                   }
                 }}
               >
-                {collapsed ? (
-                  <Icon 
-                    size={22} 
-                    color={isActive ? 'var(--forest-green-primary)' : 'var(--sanctuary-text-secondary)'} 
-                  />
-                ) : (
-                  <Stack gap={2} align="flex-start">
-                    <Text size="sm" fw={isActive ? 600 : 500}>
-                      {hub.label}
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      {hub.description}
-                    </Text>
-                  </Stack>
-                )}
+                <Stack gap={2} align="flex-start">
+                  <Text size="sm" fw={isActive ? 600 : 500}>
+                    {hub.label}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {hub.description}
+                  </Text>
+                </Stack>
               </Button>
             );
 
@@ -287,12 +284,12 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
               variant="subtle"
               color="gray"
               fullWidth={!collapsed}
-              leftSection={collapsed ? undefined : <IconUser size={20} />}
+              leftSection={<IconUser size={20} color={'var(--sanctuary-text-secondary)'} />}
               justify={collapsed ? 'center' : 'start'}
               size="sm"
               px={collapsed ? 'xs' : 'md'}
             >
-              {collapsed ? <IconUser size={22} color={'var(--sanctuary-text-secondary)'} /> : 'Profile'}
+              Profile
             </Button>
           </Tooltip>
 
@@ -304,12 +301,12 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
               variant="subtle"
               color="gray"
               fullWidth={!collapsed}
-              leftSection={collapsed ? undefined : <IconSettings size={20} />}
+              leftSection={<IconSettings size={20} color={'var(--sanctuary-text-secondary)'} />}
               justify={collapsed ? 'center' : 'start'}
               size="sm"
               px={collapsed ? 'xs' : 'md'}
             >
-              {collapsed ? <IconSettings size={22} color={'var(--sanctuary-text-secondary)'} /> : 'Settings'}
+              Settings
             </Button>
           </Tooltip>
 
@@ -319,7 +316,7 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
               variant="subtle"
               color="red"
               fullWidth={!collapsed}
-              leftSection={collapsed ? undefined : <IconLogout size={20} />}
+              leftSection={<IconLogout size={20} color={'var(--muted-terracotta)'} />}
               justify={collapsed ? 'center' : 'start'}
               size="sm"
               px={collapsed ? 'xs' : 'md'}
@@ -328,7 +325,7 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
                 console.log('Sign out clicked');
               }}
             >
-              {collapsed ? <IconLogout size={22} color={'var(--muted-terracotta)'} /> : 'Sign Out'}
+              Sign Out
             </Button>
           </Tooltip>
         </Stack>
