@@ -44,7 +44,7 @@ interface SidebarNavigationProps {
 interface NavigationHub {
   id: string;
   label: string;
-  icon: React.ComponentType<any>;
+  icon: React.ComponentType<{ size?: number; color?: string }>;
   href: string;
   description: string;
   badge?: string | number;
@@ -216,6 +216,7 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
               <Button
                 component={Link}
                 href={hub.href}
+                prefetch={false}
                 key={hub.id}
                 variant={isActive ? 'light' : 'subtle'}
                 color={isActive ? 'forestGreen' : 'gray'}
@@ -281,6 +282,7 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
             <Button
               component={Link}
               href="/profile"
+              prefetch={false}
               variant="subtle"
               color="gray"
               fullWidth={!collapsed}
@@ -298,6 +300,7 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
             <Button
               component={Link}
               href="/settings"
+              prefetch={false}
               variant="subtle"
               color="gray"
               fullWidth={!collapsed}

@@ -204,7 +204,7 @@ function EmptySearchState({ searchTerm }: { searchTerm?: string }) {
           </Title>
           {searchTerm ? (
             <Text size="md" c="dimmed" ta="center">
-              We couldn't find any memories matching "{searchTerm}". Try different keywords or upload more content.
+              We couldn&apos;t find any memories matching &quot;{searchTerm}&quot;. Try different keywords or upload more content.
             </Text>
           ) : (
             <Text size="md" c="dimmed" ta="center">

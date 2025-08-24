@@ -41,7 +41,7 @@ interface ContextPanelProps {
 interface ContextPanelTab {
   id: string;
   label: string;
-  icon: React.ComponentType<any>;
+  icon: React.ComponentType<{ size?: number; color?: string }>;
   content: ReactNode;
   badge?: string | number;
 }
@@ -104,7 +104,7 @@ const RelatedTabContent = () => (
 
 const QuickActionsTabContent = ({ contextId, contextType }: { contextId?: string; contextType?: string }) => {
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
-  const [results, setResults] = useState<Record<string, any>>({});
+  const [results, setResults] = useState<Record<string, unknown>>({});
 
   const handleAction = async (action: 'summarize' | 'study-guide' | 'flashcards') => {
     if (!contextId || contextType !== 'document') {
@@ -238,7 +238,7 @@ const QuickActionsTabContent = ({ contextId, contextType }: { contextId?: string
           <Stack gap="xs">
             <Text size="sm" fw={600}>Flashcards</Text>
             <Text size="xs">Generated {results.flashcards.cards.length} flashcards</Text>
-            {results.flashcards.cards.slice(0, 2).map((card: any, index: number) => (
+            {results.flashcards.cards.slice(0, 2).map((card: { front: string; back: string }, index: number) => (
               <Card key={index} p="xs" withBorder bg="gray.0">
                 <Stack gap="xs">
                   <Text size="xs" fw={500}>Q: {card.front}</Text>

@@ -69,8 +69,8 @@ export function TagSelector({
 
   const fetchTags = async () => {
     try {
-      const { api } = await import('../../lib/api');
-      const data = await api.request<{ tags: Tag[] }>('/api/v1/tags');
+      const { apiClient } = await import('../../lib/api');
+      const data = await apiClient.request<{ tags: Tag[] }>('/api/v1/tags');
       setTags(data.tags);
     } catch (error) {
       console.error('Failed to fetch tags:', error);
@@ -106,8 +106,8 @@ export function TagSelector({
 
     setCreating(true);
     try {
-      const { api } = await import('../../lib/api');
-      const data = await api.request<{ tag: Tag }>('/api/v1/tags', {
+      const { apiClient } = await import('../../lib/api');
+      const data = await apiClient.request<{ tag: Tag }>('/api/v1/tags', {
         method: 'POST',
         body: JSON.stringify({
           name: newTagName.trim(),
@@ -143,26 +143,19 @@ export function TagSelector({
     }
 
     try {
-      const { api } = await import('@/lib/api');
-      await api.request(`/api/v1/tags/${tagId}`, {
+      const { apiClient } = await import('@/lib/api');
+      await apiClient.request(`/api/v1/tags/${tagId}`, {
         method: 'DELETE'
       });
       
       setTags(tags.filter(t => t.id !== tagId));
       onChange(value.filter(id => id !== tagId));
         
-        notifications.show({
-          title: 'Success',
-          message: 'Tag deleted successfully',
-          color: 'green'
-        });
-      } else {
-        notifications.show({
-          title: 'Error',
-          message: 'Failed to delete tag',
-          color: 'red'
-        });
-      }
+      notifications.show({
+        title: 'Success',
+        message: 'Tag deleted successfully',
+        color: 'green'
+      });
     } catch (error) {
       notifications.show({
         title: 'Error',
@@ -180,7 +173,7 @@ export function TagSelector({
   }));
 
   // Custom item component to show tag color
-  const renderSelectOption = ({ option }: any) => {
+  const renderSelectOption = ({ option }: { option: { value: string; label: string; group?: string } }) => {
     const tag = tags.find(t => t.id === option.value);
     if (!tag) return option.label;
 
@@ -204,7 +197,7 @@ export function TagSelector({
   };
 
   // Custom value component to show colored badges
-  const renderValue = (item: any) => {
+  const renderValue = (item: { value: string; label: string }) => {
     const tag = tags.find(t => t.id === item.value);
     if (!tag) return null;
 
@@ -263,7 +256,7 @@ export function TagSelector({
                     setShowCreateModal(true);
                   }}
                 >
-                  Create "{searchValue}"
+                  Create &quot;{searchValue}&quot;
                 </Button>
               </Group>
             ) : 'No tags available'

@@ -18,8 +18,8 @@ interface RecentActivity {
     code: string;
   };
   timestamp: Date;
-  metadata: Record<string, any>;
-  icon: React.ComponentType<any>;
+  metadata: Record<string, unknown>;
+  icon: React.ComponentType<{ size?: number; color?: string }>;
 }
 
 function getActionColor(action: string): string {
@@ -48,7 +48,7 @@ function getTypeColor(type: RecentActivity['type']): string {
   }
 }
 
-function getTypeIcon(type: RecentActivity['type']): React.ComponentType<any> {
+function getTypeIcon(type: RecentActivity['type']): React.ComponentType<{ size?: number; color?: string }> {
   switch (type) {
     case 'document': return IconFileText;
     case 'audio': return IconMicrophone;

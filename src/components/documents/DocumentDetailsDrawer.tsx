@@ -96,9 +96,9 @@ export function DocumentDetailsDrawer({
     if (!document) return;
 
     try {
-      const { api } = await import('@/lib/api');
-      const data = await api.request<{ tags: any[] }>(`/api/v1/documents/${document.id}/tags`);
-      setSelectedTags(data.tags.map((t: any) => t.id));
+      const { apiClient } = await import('@/lib/api');
+      const data = await apiClient.request<{ tags: { id: string; name: string }[] }>(`/api/v1/documents/${document.id}/tags`);
+      setSelectedTags(data.tags.map((t: { id: string; name: string }) => t.id));
     } catch (error) {
       console.error('Failed to fetch document tags:', error);
     }
@@ -110,8 +110,8 @@ export function DocumentDetailsDrawer({
     setSaving(true);
     try {
       // Update document details
-      const { api } = await import('@/lib/api');
-      await api.request(`/api/v1/documents/${document.id}`, {
+      const { apiClient } = await import('@/lib/api');
+      await apiClient.request(`/api/v1/documents/${document.id}`, {
         method: 'PATCH',
         body: {
           filename: editedName,
@@ -120,7 +120,7 @@ export function DocumentDetailsDrawer({
       });
 
       // Update tags
-      await api.request(`/api/v1/documents/${document.id}/tags`, {
+      await apiClient.request(`/api/v1/documents/${document.id}/tags`, {
         method: 'POST',
         body: {
           tagIds: selectedTags
@@ -155,8 +155,8 @@ export function DocumentDetailsDrawer({
 
     setDeleting(true);
     try {
-      const { api } = await import('@/lib/api');
-      await api.request(`/api/v1/documents/${document.id}`, {
+      const { apiClient } = await import('@/lib/api');
+      await apiClient.request(`/api/v1/documents/${document.id}`, {
         method: 'DELETE'
       });
 

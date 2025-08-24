@@ -10,7 +10,7 @@ export interface Memory {
   sourceType: 'manual' | 'document' | 'web' | 'conversation' | 'audio';
   sourceId?: string;
   containerTags: string[];
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
@@ -21,7 +21,7 @@ export interface MemorySearchResult {
   content: string;
   sourceType: string;
   containerTags: string[];
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 export interface MemorySearchFilters {
@@ -34,7 +34,16 @@ export interface CreateMemoryData {
   source_type: 'manual' | 'document' | 'web' | 'conversation' | 'audio';
   source_id?: string;
   container_tags?: string[];
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MemoryRelation {
+  id: string;
+  score: number;
+  content: string;
+  sourceType: string;
+  containerTags: string[];
+  metadata: Record<string, unknown>;
 }
 
 export function useMemories() {
@@ -63,7 +72,7 @@ export function useMemories() {
       const queryString = params.toString();
       const url = `/api/v1/memories${queryString ? `?${queryString}` : ''}`;
       
-      const response = await api.request<{ memories: Memory[]; total: number }>(url);
+      const response = await apiClient.request<{ memories: Memory[]; total: number }>(url);
       setMemories(response.memories || []);
       return response;
     } catch (err) {
@@ -83,7 +92,7 @@ export function useMemories() {
     setError(null);
     
     try {
-      const response = await api.request<{ memory: Memory }>(`/api/v1/memories/${id}`);
+      const response = await apiClient.request<{ memory: Memory }>(`/api/v1/memories/${id}`);
       return response.memory;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch memory';
@@ -100,7 +109,7 @@ export function useMemories() {
     setError(null);
     
     try {
-      const response = await api.request<{ memory: Memory }>('/api/v1/memories', {
+      const response = await apiClient.request<{ memory: Memory }>('/api/v1/memories', {
         method: 'POST',
         body: JSON.stringify(data),
       });
@@ -124,7 +133,7 @@ export function useMemories() {
     setError(null);
     
     try {
-      const response = await api.request<{ memory: Memory }>(`/api/v1/memories/${id}`, {
+      const response = await apiClient.request<{ memory: Memory }>(`/api/v1/memories/${id}`, {
         method: 'PUT',
         body: JSON.stringify(data),
       });
@@ -148,7 +157,7 @@ export function useMemories() {
     setError(null);
     
     try {
-      await api.request<{ success: boolean }>(`/api/v1/memories/${id}`, {
+      await apiClient.request<{ success: boolean }>(`/api/v1/memories/${id}`, {
         method: 'DELETE',
       });
       
@@ -173,7 +182,7 @@ export function useMemories() {
     setError(null);
     
     try {
-      const response = await api.request<{ results: MemorySearchResult[] }>('/api/v1/memories/search', {
+      const response = await apiClient.request<{ results: MemorySearchResult[] }>('/api/v1/memories/search', {
         method: 'POST',
         body: JSON.stringify({
           query,
@@ -201,7 +210,7 @@ export function useMemories() {
     setError(null);
     
     try {
-      const response = await api.request<{ memories: Memory[]; imported: number }>('/api/v1/memories/import/document', {
+      const response = await apiClient.request<{ memories: Memory[]; imported: number }>('/api/v1/memories/import/document', {
         method: 'POST',
         body: JSON.stringify({
           document_id: documentId,
@@ -229,7 +238,7 @@ export function useMemories() {
     
     try {
       const params = limit ? `?limit=${limit}` : '';
-      const response = await api.request<{ relations: any[] }>(`/api/v1/memories/${id}/relations${params}`);
+      const response = await apiClient.request<{ relations: MemoryRelation[] }>(`/api/v1/memories/${id}/relations${params}`);
       return response.relations;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch memory relations';
@@ -309,7 +318,7 @@ export function useMemory(id?: string) {
     setError(null);
     
     try {
-      const response = await api.request<{ memory: Memory }>(`/api/v1/memories/${memoryId}`);
+      const response = await apiClient.request<{ memory: Memory }>(`/api/v1/memories/${memoryId}`);
       setMemory(response.memory);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch memory';

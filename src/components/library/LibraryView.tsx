@@ -28,6 +28,26 @@ import { useMediaQuery } from '@mantine/hooks';
 import { DocumentGrid } from './DocumentGrid';
 import { DocumentList } from './DocumentList';
 import { BulkActionsBar } from './BulkActionsBar';
+import { Course } from '@/types/course';
+
+// Document interface for type safety
+interface Document {
+  id: string;
+  title: string;
+  type: string;
+  fileUrl?: string;
+  course?: {
+    name: string;
+    color: string;
+    code: string;
+  };
+  tags: string[];
+  updatedAt: Date;
+  status: 'ready' | 'processing' | 'error';
+  size: number;
+  syncStatus: 'synced' | 'syncing' | 'error' | 'offline';
+  canEdit?: boolean;
+}
 
 interface LibraryViewProps {
   onDocumentSelect?: (documentId: string) => void;
@@ -64,8 +84,8 @@ export function LibraryView({ onDocumentSelect, onBulkAction }: LibraryViewProps
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
-  const [documents, setDocuments] = useState<any[]>([]);
-  const [courses, setCourses] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<DocumentFilters>({
@@ -110,9 +130,9 @@ export function LibraryView({ onDocumentSelect, onBulkAction }: LibraryViewProps
       } else {
         setError('Failed to load documents');
       }
-    } catch (err: any) {
-      console.error('Error loading documents:', err);
-      setError(err.message || 'Failed to load documents');
+    } catch (error: unknown) {
+      console.error('Error loading documents:', error);
+      setError((error as Error).message || 'Failed to load documents');
     } finally {
       setLoading(false);
     }

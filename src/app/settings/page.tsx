@@ -2,7 +2,9 @@
 
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AppShell } from '@/components/layout/AppShell';
-import { Container, Title, Text, Stack } from '@mantine/core';
+import { Container, Title, Text, Stack, Card, Divider, Group } from '@mantine/core';
+import { UniversitySelect } from '@/components/settings/UniversitySelect';
+import { IconSchool, IconSettings, IconUser } from '@tabler/icons-react';
 
 export default function SettingsPage() {
   return (
@@ -10,10 +12,52 @@ export default function SettingsPage() {
       <AppShell>
         <Container size="xl" py="md">
           <Stack gap="lg">
-            <Title order={1}>Settings</Title>
-            <Text c="dimmed">
-              Settings page is coming soon. Configure your preferences and application settings here.
-            </Text>
+            <div>
+              <Title order={1}>Settings</Title>
+              <Text c="dimmed" mt="xs">
+                Configure your preferences and application settings.
+              </Text>
+            </div>
+
+            {/* University Preferences */}
+            <Card withBorder padding="lg">
+              <Group gap="xs" mb="md">
+                <IconSchool size={20} />
+                <Title order={3}>University Preferences</Title>
+              </Group>
+              
+              <Text size="sm" c="dimmed" mb="md">
+                Select your university to enable institution-specific features like semester calendars and course imports.
+              </Text>
+              
+              <UniversitySelect 
+                description="This will enable hardcoded semester options for your institution and prepare for future course import features."
+              />
+            </Card>
+
+            {/* Account Settings */}
+            <Card withBorder padding="lg">
+              <Group gap="xs" mb="md">
+                <IconUser size={20} />
+                <Title order={3}>Account Settings</Title>
+              </Group>
+              
+              <Text size="sm" c="dimmed">
+                Account management features are coming soon. You'll be able to manage your profile, change passwords, and configure privacy settings here.
+              </Text>
+            </Card>
+
+            {/* General Settings */}
+            <Card withBorder padding="lg">
+              <Group gap="xs" mb="md">
+                <IconSettings size={20} />
+                <Title order={3}>General Settings</Title>
+              </Group>
+              
+              <Text size="sm" c="dimmed">
+                Theme selection, notification preferences, and data export options will be available soon.
+              </Text>
+            </Card>
           </Stack>
         </Container>
       </AppShell>

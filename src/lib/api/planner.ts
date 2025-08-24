@@ -54,98 +54,56 @@ export interface CurrentWeekResponse {
   week_end: string;
 }
 
-const API_BASE = 'https://studymill-api-production.merchantzains.workers.dev/api/v1';
+import { apiClient } from '@/lib/api';
+
+const API_BASE = '/api/v1';
 
 /**
  * Get course weeks for a semester
  */
 export async function getSemesterWeeks(semesterId: string): Promise<CourseWeek[]> {
-  const response = await fetch(`${API_BASE}/planner/weeks/${semesterId}`, {
-    credentials: 'include',
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to fetch semester weeks: ${response.statusText}`);
-  }
-  
-  return response.json();
+  const data = await apiClient.request<{ weeks: CourseWeek[] }>(`/api/v1/planner/weeks/${semesterId}`);
+  // Support both wrapped and raw responses
+  return (data as any).weeks ?? (data as any);
 }
 
 /**
  * Rebuild week buckets for a semester
  */
 export async function rebuildSemesterWeeks(semesterId: string): Promise<{ message: string; weeks: number; data: CourseWeek[] }> {
-  const response = await fetch(`${API_BASE}/planner/weeks/${semesterId}/rebuild`, {
-    method: 'POST',
-    credentials: 'include',
+  return apiClient.request(`/api/v1/planner/weeks/${semesterId}/rebuild`, {
+    method: 'POST'
   });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to rebuild semester weeks: ${response.statusText}`);
-  }
-  
-  return response.json();
 }
 
 /**
  * Get assignments grouped by week for a semester
  */
 export async function getAssignmentsByWeek(semesterId: string): Promise<WeeklyAssignmentsResponse> {
-  const response = await fetch(`${API_BASE}/planner/assignments/${semesterId}/by-week`, {
-    credentials: 'include',
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to fetch assignments by week: ${response.statusText}`);
-  }
-  
-  return response.json();
+  return apiClient.request(`/api/v1/planner/assignments/${semesterId}/by-week`);
 }
 
 /**
  * Get assignments for the current week
  */
 export async function getCurrentWeekAssignments(): Promise<CurrentWeekResponse> {
-  const response = await fetch(`${API_BASE}/planner/assignments/current-week`, {
-    credentials: 'include',
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to fetch current week assignments: ${response.statusText}`);
-  }
-  
-  return response.json();
+  return apiClient.request('/api/v1/planner/assignments/current-week');
 }
 
 /**
  * Auto-assign week numbers to assignments based on due dates
  */
 export async function autoAssignWeekNumbers(courseId: string): Promise<{ message: string }> {
-  const response = await fetch(`${API_BASE}/planner/courses/${courseId}/auto-assign-weeks`, {
-    method: 'POST',
-    credentials: 'include',
+  return apiClient.request(`/api/v1/planner/courses/${courseId}/auto-assign-weeks`, {
+    method: 'POST'
   });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to auto-assign week numbers: ${response.statusText}`);
-  }
-  
-  return response.json();
 }
 
 /**
  * Get planner statistics for a semester
  */
 export async function getPlannerStats(semesterId: string): Promise<PlannerStats> {
-  const response = await fetch(`${API_BASE}/planner/stats/${semesterId}`, {
-    credentials: 'include',
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to fetch planner stats: ${response.statusText}`);
-  }
-  
-  return response.json();
+  return apiClient.request(`/api/v1/planner/stats/${semesterId}`);
 }
 
 /**
@@ -165,18 +123,10 @@ export async function getAssignments(options: {
   if (options.weekNumber) params.append('week_no', options.weekNumber.toString());
   
   const queryString = params.toString();
-  const url = `${API_BASE}/assignments${queryString ? `?${queryString}` : ''}`;
+  const url = `/api/v1/assignments${queryString ? `?${queryString}` : ''}`;
   
-  const response = await fetch(url, {
-    credentials: 'include',
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to fetch assignments: ${response.statusText}`);
-  }
-  
-  const data = await response.json();
-  return data.assignments || data;
+  const data = await apiClient.request(url);
+  return (data as any).assignments || data;
 }
 
 /**
@@ -186,20 +136,11 @@ export async function updateAssignmentStatus(
   assignmentId: string, 
   status: 'pending' | 'in_progress' | 'completed' | 'overdue'
 ): Promise<Assignment> {
-  const response = await fetch(`${API_BASE}/assignments/${assignmentId}`, {
+  return apiClient.request(`/api/v1/assignments/${assignmentId}`, {
     method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify({ status }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status })
   });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to update assignment status: ${response.statusText}`);
-  }
-  
-  return response.json();
 }
 
 /**
@@ -213,18 +154,9 @@ export async function createAssignment(assignment: {
   assignment_type?: string;
   week_no?: number;
 }): Promise<Assignment> {
-  const response = await fetch(`${API_BASE}/assignments`, {
+  return apiClient.request(`/api/v1/assignments`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify(assignment),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(assignment)
   });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to create assignment: ${response.statusText}`);
-  }
-  
-  return response.json();
 }

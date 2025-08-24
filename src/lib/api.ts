@@ -1,6 +1,8 @@
 // API Client for StudyMill Backend Communication
 // Handles authentication, requests, and error handling
 
+import { Course, TodaysClasses, LectureSession } from '@/types/course';
+
 export interface User {
   id: string;
   email: string;
@@ -427,7 +429,7 @@ class ApiClient {
     };
   }>): Promise<{
     success: boolean;
-    course: any; // Same structure as createCourse response
+    course: Course;
   }> {
     return this.request(`/api/v1/courses/${id}`, {
       method: 'PUT',
@@ -446,7 +448,7 @@ class ApiClient {
 
   async getCourse(id: string): Promise<{
     success: boolean;
-    course: any; // Same structure as createCourse response
+    course: Course;
   }> {
     return this.request(`/api/v1/courses/${id}`);
   }
@@ -455,7 +457,7 @@ class ApiClient {
   async getTodaysClasses(): Promise<{
     success: boolean;
     classes: Array<{
-      course: any; // Course object
+      course: Course;
       session: {
         id: string;
         courseId: string;
@@ -532,7 +534,7 @@ class ApiClient {
     title?: string;
   }): Promise<{
     success: boolean;
-    session: any; // LectureSession object
+    session: LectureSession;
   }> {
     return this.request(`/api/v1/courses/${courseId}/sessions`, {
       method: 'POST',
@@ -546,7 +548,7 @@ class ApiClient {
     documentIds?: string[];
   }): Promise<{
     success: boolean;
-    session: any; // LectureSession object
+    session: LectureSession;
   }> {
     return this.request(`/api/v1/courses/${courseId}/sessions/${sessionId}`, {
       method: 'PUT',

@@ -155,7 +155,8 @@ export const useFocusTimerStore = create<FocusTimerStore>()(
                 // Play sound if enabled
                 if (get().settings.soundEnabled) {
                   // Create a simple beep sound
-                  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+                  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+                  const audioContext = new AudioContextClass();
                   const oscillator = audioContext.createOscillator();
                   const gainNode = audioContext.createGain();
                   

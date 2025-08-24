@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Modal,
   Title,
@@ -33,14 +33,26 @@ import {
 } from '@tabler/icons-react';
 import { DateInput } from '@mantine/dates';
 import { useCourses, CreateCourseData } from '@/hooks/useCourses';
-import { CourseScheduleTime, CourseSemester } from '@/types/course';
+import { Course, CourseScheduleTime, CourseSemester } from '@/types/course';
 import { SemesterPicker } from './SemesterPicker';
+
+interface CourseFormData {
+  name: string;
+  code: string;
+  color: string;
+  description: string;
+  instructor: string;
+  credits: number;
+  schedule: CourseScheduleTime[];
+  semester_id: string;
+  semester: CourseSemester;
+}
 
 interface CourseCreationProps {
   opened: boolean;
   onClose: () => void;
   editMode?: boolean;
-  initialData?: any; // For edit functionality
+  initialData?: Course; // For edit functionality
   onSuccess?: () => void; // Called after successful course creation
 }
 
@@ -74,16 +86,16 @@ export function CourseCreation({ opened, onClose, editMode, initialData, onSucce
   const { createCourse, updateCourse, loading } = useCourses();
   
   // Form state - extended to include semester_id
-  const [formData, setFormData] = useState<any>({
+  const [formData, setFormData] = useState<CourseFormData>({
     name: initialData?.name || '',
     code: initialData?.code || '',
     color: initialData?.color || PRESET_COLORS[0],
     description: initialData?.description || '',
     instructor: initialData?.instructor || '',
     credits: initialData?.credits || 3,
-    schedule: initialData?.schedule ? JSON.parse(initialData.schedule) : [],
-    semester_id: initialData?.semester_id || '',
-    semester: {
+    schedule: (initialData as any)?.schedule || [],
+    semester_id: (initialData as any)?.semester_id || '',
+    semester: (initialData as any)?.semester || {
       startDate: '',
       endDate: '',
       name: 'Fall 2025'
@@ -100,6 +112,24 @@ export function CourseCreation({ opened, onClose, editMode, initialData, onSucce
 
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // If edit data changes while modal is mounted, sync it into the form
+  useEffect(() => {
+    if (editMode && initialData) {
+      setFormData(prev => ({
+        ...prev,
+        name: initialData.name ?? prev.name,
+        code: initialData.code ?? prev.code,
+        color: initialData.color ?? prev.color,
+        description: initialData.description ?? prev.description,
+        instructor: initialData.instructor ?? prev.instructor,
+        credits: (initialData as any).credits ?? prev.credits,
+        schedule: (initialData as any).schedule ?? prev.schedule,
+        semester_id: (initialData as any).semester_id ?? prev.semester_id,
+        semester: (initialData as any).semester ?? prev.semester,
+      }));
+    }
+  }, [editMode, initialData]);
 
   const handleAddScheduleSlot = () => {
     // Validate schedule slot

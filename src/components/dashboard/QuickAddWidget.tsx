@@ -15,7 +15,7 @@ interface QuickAction {
   id: string;
   label: string;
   description: string;
-  icon: React.ComponentType<any>;
+  icon: React.ComponentType<{ size?: number; color?: string }>;
   color: string;
   onClick: () => void;
 }

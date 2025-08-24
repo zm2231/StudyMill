@@ -34,6 +34,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import { DocumentUploader } from '../upload/DocumentUploader';
 import { rebuildSemesterWeeks, autoAssignWeekNumbers } from '@/lib/api/planner';
+import { Course } from '@/types/course';
 
 interface SyllabusIngestSummaryProps {
   opened: boolean;
@@ -100,8 +101,8 @@ export function SyllabusIngestSummary({
     setStep('processing');
 
     try {
-      const { api } = await import('@/lib/api');
-      const result = await api.request('/api/v1/ingest/syllabus', {
+      const { apiClient } = await import('@/lib/api');
+      const result = await apiClient.request('/api/v1/ingest/syllabus', {
         method: 'POST',
         body: {
           course_id: courseId,
@@ -139,11 +140,13 @@ export function SyllabusIngestSummary({
 
       // Get course details to find semester ID
       try {
-        const { api } = await import('@/lib/api');
-        const course = await api.request<any>(`/api/v1/courses/${courseId}`);
-        if (course.semester_id) {
-          // Rebuild semester weeks
-          await rebuildSemesterWeeks(course.semester_id);
+        const { apiClient } = await import('@/lib/api');
+        const response = await apiClient.request<{ course: Course }>(`/api/v1/courses/${courseId}`);
+        const course = response.course;
+        if (course.semester) {
+          // Rebuild semester weeks - need to find semester ID from another endpoint
+          // For now, skip this functionality until we have proper semester ID
+          // await rebuildSemesterWeeks(course.semester_id);
           
           // Auto-assign week numbers to assignments based on due dates
           await autoAssignWeekNumbers(courseId);
@@ -219,7 +222,7 @@ export function SyllabusIngestSummary({
           <>
             <Alert icon={<IconFileText size={16} />} variant="light">
               Upload your syllabus and optionally a separate schedule document. 
-              We'll extract grading weights, assignments, and due dates automatically.
+              We&apos;ll extract grading weights, assignments, and due dates automatically.
             </Alert>
 
             <Paper withBorder p="md" radius="md">
@@ -334,7 +337,7 @@ export function SyllabusIngestSummary({
               variant="light"
               title="Extraction Complete"
             >
-              We've extracted the following information from your syllabus. 
+              We&apos;ve extracted the following information from your syllabus. 
               Please review and confirm before saving.
             </Alert>
 

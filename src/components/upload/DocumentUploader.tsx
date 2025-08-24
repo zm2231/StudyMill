@@ -238,8 +238,8 @@ export function DocumentUploader({
       }, 200);
 
       // Upload file
-      const { api } = await import('@/lib/api');
-      const response = await api.uploadFile('/api/v1/documents/upload', formData);
+      const { apiClient } = await import('@/lib/api');
+      const response = await apiClient.uploadFile('/api/v1/documents/upload', formData);
 
       clearInterval(progressInterval);
 

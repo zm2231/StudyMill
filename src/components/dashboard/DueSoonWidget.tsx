@@ -79,7 +79,7 @@ export function DueSoonWidget() {
         }));
         
         setDueItems(transformedAssignments);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Failed to fetch due assignments:', err);
         // Show empty state instead of error for better UX
         setDueItems([]);

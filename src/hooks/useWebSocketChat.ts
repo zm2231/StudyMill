@@ -6,7 +6,14 @@ import { Message } from '@/types/chat';
 interface WebSocketMessage {
   type: 'session_info' | 'message' | 'message_start' | 'message_chunk' | 'message_complete' | 'error' | 'user_typing' | 'user_stopped_typing';
   sessionId?: string;
-  session?: any;
+  session?: {
+    id: string;
+    userId: string;
+    courseId?: string;
+    scope?: string;
+    createdAt: string;
+    lastActivity: string;
+  };
   message?: Message;
   messageId?: string;
   chunk?: string;

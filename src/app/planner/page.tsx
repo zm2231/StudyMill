@@ -50,8 +50,8 @@ export default function PlannerPage() {
   const loadSemesters = async () => {
     try {
       setLoading(true);
-      const { api } = await import('@/lib/api');
-      const data = await api.request<{ semesters: Semester[] }>('/api/v1/semesters');
+      const { apiClient } = await import('@/lib/api');
+      const data = await apiClient.request<{ semesters: Semester[] }>('/api/v1/semesters');
       const semestersData = data.semesters;
       
       setSemesters(semestersData);

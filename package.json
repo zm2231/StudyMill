@@ -6,6 +6,7 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
+    "test": "echo \"No tests specified\" && exit 0",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "pages:build": "npm run build && npx @cloudflare/next-on-pages@1",

@@ -41,8 +41,8 @@ interface TodaysClassesProps {
 export function TodaysClasses({ onOpenAudioUpload, onOpenDocumentUpload, refreshKey }: TodaysClassesProps) {
   const { getTodaysClasses, getCurrentCourse, getUpcomingCourse, fetchCourses, loading } = useCourses();
   const [todaysClasses, setTodaysClasses] = useState<TodaysClassesType[]>([]);
-  const [currentCourse, setCurrentCourse] = useState<any>(null);
-  const [upcomingCourse, setUpcomingCourse] = useState<any>(null);
+  const [currentCourse, setCurrentCourse] = useState<TodaysClassesType | null>(null);
+  const [upcomingCourse, setUpcomingCourse] = useState<TodaysClassesType | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -162,7 +162,7 @@ export function TodaysClasses({ onOpenAudioUpload, onOpenDocumentUpload, refresh
                 Currently in class: {currentCourse.name}
               </Text>
               <Text size="xs" c="dimmed">
-                Perfect time to upload today's lecture materials!
+                Perfect time to upload today&apos;s lecture materials!
               </Text>
             </Box>
             <Group gap="xs">
@@ -203,7 +203,7 @@ export function TodaysClasses({ onOpenAudioUpload, onOpenDocumentUpload, refresh
           <Title order={3} size="h4">
             <Group gap="xs">
               <IconSchool size={20} />
-              Today's Classes
+              Today&apos;s Classes
             </Group>
           </Title>
           <Badge variant="light" size="sm">

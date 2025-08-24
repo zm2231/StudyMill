@@ -137,7 +137,7 @@ export function AudioUpload({ opened, onClose, preselectedCourseId }: AudioUploa
         formData.append('courseId', selectedCourse);
       }
       
-      const options: any = {
+      const options: { model: string; language: string } = {
         model: 'whisper-large-v3-turbo',
         language: 'en'
       };

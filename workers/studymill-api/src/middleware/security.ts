@@ -128,14 +128,31 @@ export function secureCORS() {
     const origin = c.req.header('Origin');
     const isDevelopment = c.env?.ENVIRONMENT === 'development';
 
-    // Define allowed origins based on environment
+    // Define allowed origins
     const allowedOrigins = [
       'https://studymill.ai',
       'https://www.studymill.ai',
       'https://studymill-frontend.pages.dev',
       'https://studymill.pages.dev',
       'https://a8b6094b.studymill-frontend.pages.dev'
-        ];
+    ];
+
+    // Always allow localhost for development (regardless of environment variable)
+    const localhostOrigins = [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:3001'
+    ];
+
+    // Check if origin is localhost
+    const isLocalhost = origin && localhostOrigins.some(localhost => origin.startsWith(localhost));
+
+    // Add all Cloudflare Pages deploy URLs (they follow a pattern)
+    const isCloudflarePages = origin && (
+      origin.includes('.studymill-frontend.pages.dev') ||
+      origin.includes('.studymill.pages.dev')
+    );
 
     // Add custom domains from environment
     const customOrigin = c.env?.FRONTEND_URL;
@@ -144,21 +161,31 @@ export function secureCORS() {
     }
 
     // Check if origin is allowed
-    const isAllowedOrigin = !origin || allowedOrigins.includes(origin);
+    const isAllowedOrigin = !origin || 
+                           allowedOrigins.includes(origin) || 
+                           isLocalhost || 
+                           isCloudflarePages;
 
-    if (isAllowedOrigin) {
-      c.res.headers.set('Access-Control-Allow-Origin', origin || '*');
-      c.res.headers.set('Access-Control-Allow-Credentials', 'true');
-      c.res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-      c.res.headers.set('Access-Control-Allow-Headers', 
-        'Content-Type, Authorization, X-Requested-With, Accept, Origin'
-      );
-      c.res.headers.set('Access-Control-Max-Age', '86400'); // 24 hours
-    }
+    // Set CORS headers for all requests (more permissive)
+    c.res.headers.set('Access-Control-Allow-Origin', origin || '*');
+    c.res.headers.set('Access-Control-Allow-Credentials', 'true');
+    c.res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    c.res.headers.set('Access-Control-Allow-Headers', 
+      'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token'
+    );
+    c.res.headers.set('Access-Control-Max-Age', '86400'); // 24 hours
 
     // Handle preflight requests
     if (c.req.method === 'OPTIONS') {
-      return new Response(null, { status: 204 });
+      return new Response(null, { 
+        status: 204,
+        headers: {
+          'Access-Control-Allow-Origin': origin || '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token',
+          'Access-Control-Max-Age': '86400'
+        }
+      });
     }
 
     await next();

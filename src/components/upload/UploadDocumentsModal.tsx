@@ -123,9 +123,14 @@ export function UploadDocumentsModal({
   const [courseId, setCourseId] = useState<string>(defaultCourseId || '');
   const [tags, setTags] = useState<string[]>([]);
   const [advancedProcessing, setAdvancedProcessing] = useState(false);
-  const [courses, setCourses] = useState<any[]>([]);
+  const [courses, setCourses] = useState<{ id: string; name: string }[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [transcriptionResults, setTranscriptionResults] = useState<any[]>([]);
+  const [transcriptionResults, setTranscriptionResults] = useState<{
+    documentId: string;
+    filename: string;
+    transcription: string;
+    memoriesCreated: number;
+  }[]>([]);
   const abortControllerRef = useRef<AbortController>();
 
   // Load courses on mount
@@ -282,7 +287,7 @@ export function UploadDocumentsModal({
           } else {
             throw new Error(response.error || 'Upload failed');
           }
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error('Upload failed for file:', uploadFile.file.name, error);
           setFiles(prev => prev.map(f => 
             f.id === uploadFile.id 
@@ -304,7 +309,7 @@ export function UploadDocumentsModal({
         onUploadComplete(completedDocumentIds);
       }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Upload process failed:', error);
       notifications.show({
         title: 'Upload Failed',
@@ -531,7 +536,7 @@ export function UploadDocumentsModal({
             color="red"
             variant="light"
           >
-            Some files couldn't be uploaded. Please check the errors above and try again.
+            Some files couldn&apos;t be uploaded. Please check the errors above and try again.
           </Alert>
         )}
 

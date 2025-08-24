@@ -18,7 +18,7 @@ interface RecentItem {
   };
   lastAccessed: Date;
   progress?: number; // For study materials
-  icon: React.ComponentType<any>;
+  icon: React.ComponentType<{ size?: number; color?: string }>;
 }
 
 function getTypeColor(type: RecentItem['type']): string {
