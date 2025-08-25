@@ -48,14 +48,34 @@ app.use('*', secureCORS());
 app.use('*', csrf({
   origin: (origin) => {
     // Allow same-origin requests and approved origins
-    const allowedOrigins = [
+    // Be permissive for our known environments, including all CF Pages previews
+    if (!origin) return true; // same-origin or non-browser clients
+
+    // Local development
+    const localhostOrigins = [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:3001'
+    ];
+    if (localhostOrigins.some((o) => origin.startsWith(o))) return true;
+
+    // Primary domains
+    const staticAllowed = [
       'https://studymill.ai',
       'https://www.studymill.ai',
       'https://studymill-frontend.pages.dev',
-      'https://studymill.pages.dev',
-      'https://a8b6094b.studymill-frontend.pages.dev'
+      'https://studymill.pages.dev'
     ];
-    return !origin || allowedOrigins.some(allowed => origin.startsWith(allowed));
+    if (staticAllowed.some((o) => origin.startsWith(o))) return true;
+
+    // Any Cloudflare Pages preview subdomain
+    if (origin.includes('.studymill-frontend.pages.dev') || origin.includes('.studymill.pages.dev')) {
+      return true;
+    }
+
+    // Block everything else
+    return false;
   }
 }));
 

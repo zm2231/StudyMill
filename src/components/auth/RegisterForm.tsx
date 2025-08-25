@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Card,
   TextInput,
@@ -83,6 +83,7 @@ export function RegisterForm() {
   const [showPasswordReqs, setShowPasswordReqs] = useState(false);
   const { register, error, clearError } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const form = useForm<RegisterFormData>({
     initialValues: {
@@ -128,7 +129,13 @@ export function RegisterForm() {
       });
       
       if (success) {
-        router.push('/dashboard');
+        // Post-signup redirect support using `next` query param
+        const nextParam = searchParams?.get('next');
+        if (nextParam && nextParam.startsWith('/')) {
+          router.push(nextParam);
+        } else {
+          router.push('/dashboard');
+        }
       }
     } catch (error) {
       // Error handling is done in the auth context
