@@ -37,7 +37,7 @@ export default function HomeClient() {
   const crnHref = isAuthenticated ? '/courses/new/crn' : '/auth/register?next=/courses/new/crn';
 
   const benefits = [
-    'Upload PDFs and DOCX, then search and cite answers instantly',
+    'Upload PDFs, search instantly',
     'Chat with your documents to get clear explanations',
     'Organize everything by Courses and your Library',
     'Plan assignments with a week-by-week view',
@@ -89,7 +89,7 @@ export default function HomeClient() {
                 maxWidth: '40rem'
               }}
             >
-              Turn your PDFs and documents into searchable notes, chat with your materials, and plan your semester — at any university.
+              Turn your PDFs and documents into searchable notes, chat with your materials, and plan your semester, at any university.
             </Text>
 
             <Group justify="center" gap="md">
@@ -177,6 +177,59 @@ export default function HomeClient() {
             </SimpleGrid>
           </Paper>
 
+          {/* UGA Support Section (third section) */}
+          <Paper
+            id="uga-support"
+            p="xl"
+            radius="lg"
+            style={{
+              background: 'var(--sanctuary-surface)',
+              border: '1px solid var(--border-light)'
+            }}
+          >
+            <Stack gap="md">
+              <Group gap="xs">
+                <Badge variant="light" color="forestGreen">University-specific support</Badge>
+              </Group>
+              <Title order={3} style={{ color: 'var(--sanctuary-text-primary)' }}>
+                UGA support
+              </Title>
+              <Text size="md" style={{ color: 'var(--sanctuary-text-secondary)' }}>
+                If you study at the University of Georgia, you can:
+              </Text>
+              <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+                <Group align="flex-start">
+                  <ActionIcon size="sm" variant="light" color="forestGreen" radius="xl" aria-label="benefit">
+                    <IconCheck size={14} aria-hidden />
+                  </ActionIcon>
+                  <Text size="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
+                    Import courses by CRN
+                  </Text>
+                </Group>
+                <Group align="flex-start">
+                  <ActionIcon size="sm" variant="light" color="forestGreen" radius="xl" aria-label="benefit">
+                    <IconCheck size={14} aria-hidden />
+                  </ActionIcon>
+                  <Text size="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
+                    Auto-apply academic dates in the planner
+                  </Text>
+                </Group>
+              </SimpleGrid>
+              <Group>
+                <Button
+                  component={Link}
+                  href={crnHref}
+                  variant="light"
+                  color="forestGreen"
+                  data-analytics-id="uga-cta-crn"
+                >
+                  {isAuthenticated ? 'Add by CRN' : 'Import by CRN'}
+                </Button>
+                <Text size="sm" c="dimmed">More universities coming soon.</Text>
+              </Group>
+            </Stack>
+          </Paper>
+
           <Divider
             style={{
               borderColor: 'var(--border-medium)',
@@ -189,7 +242,7 @@ export default function HomeClient() {
             <Title
               order={2}
               ta="center"
-              mb="xl"
+              mb="xs"
               style={{
                 color: 'var(--sanctuary-text-primary)',
                 fontWeight: 600
@@ -197,6 +250,9 @@ export default function HomeClient() {
             >
               Thoughtfully Designed Study Tools
             </Title>
+            <Text ta="center" size="sm" style={{ color: 'var(--sanctuary-text-secondary)', marginBottom: '1rem' }}>
+              Have UGA-specific needs? <a href="#uga-support" style={{ color: 'var(--forest-green-primary)', textDecoration: 'none' }}>See our UGA support</a>.
+            </Text>
 
             <div style={{
               display: 'grid',
@@ -393,58 +449,6 @@ export default function HomeClient() {
                 </Text>
               </Box>
             </SimpleGrid>
-          </Paper>
-
-          {/* UGA Support Section */}
-          <Paper
-            p="xl"
-            radius="lg"
-            style={{
-              background: 'var(--sanctuary-surface)',
-              border: '1px solid var(--border-light)'
-            }}
-          >
-            <Stack gap="md">
-              <Group gap="xs">
-                <Badge variant="light" color="forestGreen">University-specific support</Badge>
-              </Group>
-              <Title order={3} style={{ color: 'var(--sanctuary-text-primary)' }}>
-                UGA support
-              </Title>
-              <Text size="md" style={{ color: 'var(--sanctuary-text-secondary)' }}>
-                If you study at the University of Georgia, you can:
-              </Text>
-              <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-                <Group align="flex-start">
-                  <ActionIcon size="sm" variant="light" color="forestGreen" radius="xl" aria-label="benefit">
-                    <IconCheck size={14} aria-hidden />
-                  </ActionIcon>
-                  <Text size="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
-                    Import courses by CRN
-                  </Text>
-                </Group>
-                <Group align="flex-start">
-                  <ActionIcon size="sm" variant="light" color="forestGreen" radius="xl" aria-label="benefit">
-                    <IconCheck size={14} aria-hidden />
-                  </ActionIcon>
-                  <Text size="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
-                    Auto-apply academic dates in the planner
-                  </Text>
-                </Group>
-              </SimpleGrid>
-              <Group>
-                <Button
-                  component={Link}
-                  href={crnHref}
-                  variant="light"
-                  color="forestGreen"
-                  data-analytics-id="uga-cta-crn"
-                >
-                  {isAuthenticated ? 'Add by CRN' : 'Import by CRN'}
-                </Button>
-                <Text size="sm" c="dimmed">More universities coming soon.</Text>
-              </Group>
-            </Stack>
           </Paper>
 
           {/* Final CTA */}
