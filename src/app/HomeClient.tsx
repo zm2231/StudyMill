@@ -89,7 +89,7 @@ export default function HomeClient() {
                 maxWidth: '40rem'
               }}
             >
-              Turn your PDFs and documents into searchable notes, chat with your materials, and plan your semester, at any university.
+              Turn your PDFs and documents into searchable notes, chat with your materials, and plan your semester, at any university. UGA supported.
             </Text>
 
             <Group justify="center" gap="md">
@@ -197,24 +197,40 @@ export default function HomeClient() {
               <Text size="md" style={{ color: 'var(--sanctuary-text-secondary)' }}>
                 If you study at the University of Georgia, you can:
               </Text>
-              <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-                <Group align="flex-start">
+              <Stack gap="sm">
+                <Group align="flex-start" justify="flex-end">
+                  <Text size="sm" style={{ color: 'var(--sanctuary-text-primary)', textAlign: 'right' }}>
+                    Import courses instantly by CRN
+                  </Text>
                   <ActionIcon size="sm" variant="light" color="forestGreen" radius="xl" aria-label="benefit">
                     <IconCheck size={14} aria-hidden />
                   </ActionIcon>
-                  <Text size="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
-                    Import courses by CRN
-                  </Text>
                 </Group>
-                <Group align="flex-start">
+                <Group align="flex-start" justify="flex-end">
+                  <Text size="sm" style={{ color: 'var(--sanctuary-text-primary)', textAlign: 'right' }}>
+                    Auto-apply UGA academic calendar dates
+                  </Text>
                   <ActionIcon size="sm" variant="light" color="forestGreen" radius="xl" aria-label="benefit">
                     <IconCheck size={14} aria-hidden />
                   </ActionIcon>
-                  <Text size="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
-                    Auto-apply academic dates in the planner
-                  </Text>
                 </Group>
-              </SimpleGrid>
+                <Group align="flex-start" justify="flex-end">
+                  <Text size="sm" style={{ color: 'var(--sanctuary-text-primary)', textAlign: 'right' }}>
+                    Access UGA-specific course information
+                  </Text>
+                  <ActionIcon size="sm" variant="light" color="forestGreen" radius="xl" aria-label="benefit">
+                    <IconCheck size={14} aria-hidden />
+                  </ActionIcon>
+                </Group>
+                <Group align="flex-start" justify="flex-end">
+                  <Text size="sm" style={{ color: 'var(--sanctuary-text-primary)', textAlign: 'right' }}>
+                    Sync with UGA semester schedules
+                  </Text>
+                  <ActionIcon size="sm" variant="light" color="forestGreen" radius="xl" aria-label="benefit">
+                    <IconCheck size={14} aria-hidden />
+                  </ActionIcon>
+                </Group>
+              </Stack>
               <Group>
                 <Button
                   component={Link}
