@@ -37,12 +37,12 @@ export default function HomeClient() {
   const crnHref = isAuthenticated ? '/courses/new/crn' : '/auth/register?next=/courses/new/crn';
 
   const benefits = [
-    'Import UGA courses by CRN in seconds',
-    'Auto-build semester weeks from the UGA academic calendar',
     'Upload PDFs and DOCX, then search and cite answers instantly',
     'Chat with your documents to get clear explanations',
     'Organize everything by Courses and your Library',
     'Plan assignments with a week-by-week view',
+    'Find what you need with hybrid semantic search',
+    'Keep deadlines and materials in one place',
   ];
 
   return (
@@ -76,7 +76,7 @@ export default function HomeClient() {
                 letterSpacing: '-0.02em'
               }}
             >
-              Study smarter at UGA in minutes
+              Study smarter with AI
             </Title>
 
             <Text
@@ -89,7 +89,7 @@ export default function HomeClient() {
                 maxWidth: '40rem'
               }}
             >
-              Import UGA courses by CRN, auto-apply academic dates, and turn PDFs into searchable notes with AI.
+              Turn your PDFs and documents into searchable notes, chat with your materials, and plan your semester — at any university.
             </Text>
 
             <Group justify="center" gap="md">
@@ -111,19 +111,6 @@ export default function HomeClient() {
                     }}
                   >
                     {isAuthenticated ? 'Go to Dashboard' : 'Create your free account'}
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    leftSection={<IconBookmarks size={20} aria-hidden />}
-                    radius="sm"
-                    component={Link}
-                    href={crnHref}
-                    aria-label={isAuthenticated ? 'Add a Course by CRN' : 'Import by CRN after signup'}
-                    data-analytics-id="hero-cta-crn"
-                  >
-                    {isAuthenticated ? 'Add by CRN' : 'Import by CRN'}
                   </Button>
 
                   {!isAuthenticated && (
@@ -150,31 +137,6 @@ export default function HomeClient() {
             <Text size="sm" mt="md" style={{ color: 'var(--sanctuary-text-secondary)' }}>
               Free to start • No credit card required • Built for students • Works with any university
             </Text>
-
-            {/* UGA callout */}
-            <Paper
-              role="region"
-              aria-label="UGA-focused callout"
-              withBorder
-              p="sm"
-              mt="md"
-              radius="md"
-              style={{ background: 'var(--sanctuary-surface)' }}
-            >
-              <Group justify="center" gap="xs" wrap="wrap">
-                <Badge variant="light" color="red">UGA Optimized</Badge>
-                <Text size="sm" c="dimmed">Import by CRN • Academic dates integrated</Text>
-                <Button
-                  component={Link}
-                  href={crnHref}
-                  size="xs"
-                  variant="light"
-                  color="red"
-                >
-                  {isAuthenticated ? 'Add by CRN' : 'Import by CRN'}
-                </Button>
-              </Group>
-            </Paper>
           </Paper>
 
           {/* Benefits */}
@@ -355,21 +317,21 @@ export default function HomeClient() {
                   <Box style={{ flex: 1 }}>
                     <Title order={3} mb="xs">Planner and Calendar</Title>
                     <Text size="sm" style={{ color: 'var(--sanctuary-text-secondary)' }}>
-                      UGA Ready
+                      Planner
                     </Text>
                   </Box>
                 </Group>
                 <Text className="academic-content" style={{ color: 'var(--sanctuary-text-primary)', fontSize: '0.95rem' }}>
-                  Track assignments and deadlines with UGA academic dates.
+                  Track assignments and deadlines with your academic calendar.
                 </Text>
                 <Badge mt="md" variant="light" color="forestGreen" style={{ fontWeight: 500 }}>
-                  UGA Ready
+                  Planner
                 </Badge>
               </Card>
             </div>
           </Box>
 
-          {/* How It Works */}
+          {/* How It Works (General) */}
           <Paper
             p="xl"
             radius="lg"
@@ -385,25 +347,13 @@ export default function HomeClient() {
             <SimpleGrid cols={{ base: 1, md: 4 }} spacing="xl">
               <Box ta="center">
                 <ActionIcon size={60} variant="light" color="forestGreen" radius="md" mb="md" mx="auto">
-                  <IconSchool size={28} aria-hidden />
-                </ActionIcon>
-                <Title order={4} mb="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
-                  1. Choose UGA
-                </Title>
-                <Text size="sm" style={{ color: 'var(--sanctuary-text-secondary)' }}>
-                  Select University of Georgia during sign-up (you can change this anytime).
-                </Text>
-              </Box>
-
-              <Box ta="center">
-                <ActionIcon size={60} variant="light" color="forestGreen" radius="md" mb="md" mx="auto">
                   <IconBookmarks size={28} aria-hidden />
                 </ActionIcon>
                 <Title order={4} mb="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
-                  2. Import by CRN
+                  1. Add your courses
                 </Title>
                 <Text size="sm" style={{ color: 'var(--sanctuary-text-secondary)' }}>
-                  Enter term and CRN to add your course automatically.
+                  Create or import courses to keep materials organized.
                 </Text>
               </Box>
 
@@ -412,25 +362,89 @@ export default function HomeClient() {
                   <IconUpload size={28} aria-hidden />
                 </ActionIcon>
                 <Title order={4} mb="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
-                  3. Upload your syllabus
+                  2. Upload documents
                 </Title>
                 <Text size="sm" style={{ color: 'var(--sanctuary-text-secondary)' }}>
-                  We extract key dates and assignments to build your plan.
+                  PDFs and DOCX become searchable, organized notes.
                 </Text>
               </Box>
 
               <Box ta="center">
                 <ActionIcon size={60} variant="light" color="forestGreen" radius="md" mb="md" mx="auto">
-                  <IconCalendarTime size={28} aria-hidden />
+                  <IconBrain size={28} aria-hidden />
                 </ActionIcon>
                 <Title order={4} mb="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
-                  4. Study and plan
+                  3. AI processing
                 </Title>
                 <Text size="sm" style={{ color: 'var(--sanctuary-text-secondary)' }}>
-                  Chat with your documents, search across courses, and stay on track with the planner.
+                  Extract key ideas and create memories automatically.
+                </Text>
+              </Box>
+
+              <Box ta="center">
+                <ActionIcon size={60} variant="light" color="forestGreen" radius="md" mb="md" mx="auto">
+                  <IconSearch size={28} aria-hidden />
+                </ActionIcon>
+                <Title order={4} mb="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
+                  4. Search & study
+                </Title>
+                <Text size="sm" style={{ color: 'var(--sanctuary-text-secondary)' }}>
+                  Find answers instantly and stay on track with the planner.
                 </Text>
               </Box>
             </SimpleGrid>
+          </Paper>
+
+          {/* UGA Support Section */}
+          <Paper
+            p="xl"
+            radius="lg"
+            style={{
+              background: 'var(--sanctuary-surface)',
+              border: '1px solid var(--border-light)'
+            }}
+          >
+            <Stack gap="md">
+              <Group gap="xs">
+                <Badge variant="light" color="forestGreen">University-specific support</Badge>
+              </Group>
+              <Title order={3} style={{ color: 'var(--sanctuary-text-primary)' }}>
+                UGA support
+              </Title>
+              <Text size="md" style={{ color: 'var(--sanctuary-text-secondary)' }}>
+                If you study at the University of Georgia, you can:
+              </Text>
+              <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+                <Group align="flex-start">
+                  <ActionIcon size="sm" variant="light" color="forestGreen" radius="xl" aria-label="benefit">
+                    <IconCheck size={14} aria-hidden />
+                  </ActionIcon>
+                  <Text size="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
+                    Import courses by CRN
+                  </Text>
+                </Group>
+                <Group align="flex-start">
+                  <ActionIcon size="sm" variant="light" color="forestGreen" radius="xl" aria-label="benefit">
+                    <IconCheck size={14} aria-hidden />
+                  </ActionIcon>
+                  <Text size="sm" style={{ color: 'var(--sanctuary-text-primary)' }}>
+                    Auto-apply academic dates in the planner
+                  </Text>
+                </Group>
+              </SimpleGrid>
+              <Group>
+                <Button
+                  component={Link}
+                  href={crnHref}
+                  variant="light"
+                  color="forestGreen"
+                  data-analytics-id="uga-cta-crn"
+                >
+                  {isAuthenticated ? 'Add by CRN' : 'Import by CRN'}
+                </Button>
+                <Text size="sm" c="dimmed">More universities coming soon.</Text>
+              </Group>
+            </Stack>
           </Paper>
 
           {/* Final CTA */}
@@ -456,7 +470,7 @@ export default function HomeClient() {
                   maxWidth: 480
                 }}
               >
-                Start free, import UGA courses by CRN, and turn your materials into answers.
+                Start free and turn your materials into answers with AI-powered search and study tools.
               </Text>
 
               <Group gap="sm" justify="center">

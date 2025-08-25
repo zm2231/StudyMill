@@ -2,20 +2,20 @@ import type { Metadata } from 'next';
 import HomeClient from './HomeClient';
 
 export const metadata: Metadata = {
-  title: 'StudyMill for UGA — CRN Course Import, AI Study Tools, Planner',
-  description: 'Import UGA courses by CRN, auto-apply the academic calendar, upload PDFs and DOCX, and study with AI chat, semantic search, and a built-in planner.',
-  keywords: ['uga', 'university of georgia', 'uga crn', 'course importer', 'academic calendar', 'study planner', 'ai study', 'pdf to notes', 'semantic search'],
+  title: 'StudyMill — AI-Powered Study Platform',
+  description: 'Upload PDFs and DOCX, chat with your notes, organize by courses, and plan your semester with AI-powered search and study tools.',
+  keywords: ['study platform', 'ai study', 'semantic search', 'pdf to notes', 'course organizer', 'study planner', 'students', 'university', 'uga'],
   openGraph: {
-    title: 'StudyMill for UGA — CRN Course Import, AI Study Tools, Planner',
-    description: 'Import UGA courses by CRN, auto-apply the academic calendar, upload PDFs and DOCX, and study with AI chat, semantic search, and a built-in planner.',
+    title: 'StudyMill — AI-Powered Study Platform',
+    description: 'Upload PDFs and DOCX, chat with your notes, organize by courses, and plan your semester with AI-powered search and study tools.',
     url: 'https://studymill.ai',
     siteName: 'StudyMill',
     type: 'website'
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'StudyMill for UGA — CRN Course Import, AI Study Tools, Planner',
-    description: 'Import UGA courses by CRN, auto-apply the academic calendar, upload PDFs and DOCX, and study with AI chat, semantic search, and a built-in planner.'
+    title: 'StudyMill — AI-Powered Study Platform',
+    description: 'Upload PDFs and DOCX, chat with your notes, organize by courses, and plan your semester with AI-powered search and study tools.'
   }
 };
 
