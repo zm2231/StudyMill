@@ -5,12 +5,14 @@ import { DEFAULT_UNIVERSITY_ID } from '@/types/university';
 
 interface UserPreferences {
   universityId: string;
+  timeZone: string;
 }
 
 const PREFERENCES_KEY = 'studySync_userPreferences';
 
 const defaultPreferences: UserPreferences = {
-  universityId: DEFAULT_UNIVERSITY_ID
+  universityId: DEFAULT_UNIVERSITY_ID,
+  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 };
 
 export function useUserPreferences() {
@@ -48,10 +50,15 @@ export function useUserPreferences() {
     updatePreferences({ universityId });
   };
 
+  const setTimeZone = (timeZone: string) => {
+    updatePreferences({ timeZone });
+  };
+
   return {
     preferences,
     loading,
     updatePreferences,
-    setUniversity
+    setUniversity,
+    setTimeZone
   };
 }

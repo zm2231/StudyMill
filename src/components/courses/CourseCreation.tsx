@@ -35,6 +35,7 @@ import { DateInput } from '@mantine/dates';
 import { useCourses, CreateCourseData } from '@/hooks/useCourses';
 import { Course, CourseScheduleTime, CourseSemester } from '@/types/course';
 import { SemesterPicker } from './SemesterPicker';
+import Link from 'next/link';
 
 interface CourseFormData {
   name: string;
@@ -244,7 +245,7 @@ export function CourseCreation({ opened, onClose, editMode, initialData, onSucce
     <Modal
       opened={opened}
       onClose={handleClose}
-      title={editMode ? "Edit Course" : "Create Course"}
+      title={editMode ? "Edit Course" : "Create Course (Manual)"}
       size="lg"
       radius="md"
       centered
@@ -296,9 +297,22 @@ export function CourseCreation({ opened, onClose, editMode, initialData, onSucce
           </Alert>
         )}
 
+        {/* Quick path: Create via CRN for UGA */}
+        <Alert variant="light">
+          <Group justify="space-between" wrap="wrap">
+            <div>
+              <Text fw={600}>Add by CRN (UGA)</Text>
+              <Text size="sm" c="dimmed">Quickly create a course by entering a term and CRN, then upload your syllabus.</Text>
+            </div>
+            <Button component={Link} href="/courses/new/crn" variant="light" color="red">
+              Use CRN Onboarding
+            </Button>
+          </Group>
+        </Alert>
+
         {/* Basic Information */}
         <Stack gap="md">
-          <Text fw={500}>Course Information</Text>
+          <Text fw={500}>Manual Course Information</Text>
           
           <Grid>
             <Grid.Col span={8}>

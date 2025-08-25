@@ -33,6 +33,7 @@ import { useMantineColorScheme, useComputedColorScheme } from '@mantine/core';
 import { useHotkeys } from 'react-hotkeys-hook';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
+import { useUserPreferences } from '@/hooks/useUserPreferences';
 
 interface TopBarComponentProps {
   onMenuClick: () => void;
@@ -92,6 +93,8 @@ export function TopBarComponent({
   const { setColorScheme } = useMantineColorScheme();
   const computedColorScheme = useComputedColorScheme('light');
   const { logout } = useAuth();
+  const { preferences } = useUserPreferences();
+  const [clock, setClock] = useState('');
   
   const breadcrumbs = generateBreadcrumbs(pathname);
 
@@ -111,6 +114,22 @@ export function TopBarComponent({
   const toggleColorScheme = () => {
     setColorScheme(computedColorScheme === 'dark' ? 'light' : 'dark');
   };
+
+  // Live clock in user-selected timezone
+  useState(() => {
+    const fmt = () => {
+      try {
+        const tz = preferences.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const s = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true, timeZone: tz }).format(new Date());
+        setClock(s);
+      } catch (e) {
+        setClock(new Date().toLocaleTimeString());
+      }
+    };
+    fmt();
+    const id = setInterval(fmt, 1000);
+    return () => clearInterval(id);
+  });
 
   return (
     <Group h="100%" px="md" justify="space-between">
@@ -189,6 +208,13 @@ export function TopBarComponent({
 
       {/* Right Section: Actions + User Menu */}
       <Group gap="sm">
+        {/* Clock */}
+        <Tooltip label={`Timezone: ${preferences.timeZone}`}>
+          <Text size="sm" c="var(--sanctuary-text-secondary)" style={{ minWidth: 84, textAlign: 'right' }}>
+            {clock}
+          </Text>
+        </Tooltip>
+
         {/* Context Panel Toggle */}
         <Tooltip label={contextPanelOpen ? 'Close AI Panel' : 'Open AI Panel'}>
           <ActionIcon

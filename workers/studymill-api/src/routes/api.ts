@@ -18,6 +18,7 @@ import { notesRoutes } from './notes';
 import plannerRoutes from './planner';
 import { semestersRouter } from './semesters';
 import { tagsRouter } from './tags';
+import { syllabusRouter } from './ingest/syllabus';
 
 export const apiRoutes = new Hono();
 
@@ -2866,6 +2867,9 @@ aiRoutes.post('/flashcards', async (c) => {
 
 // Mount protected routes (after auth middleware)
 apiRoutes.route('/courses', coursesRoutes);
+// CRN onboarding routes
+import crnRoutes from './crn';
+apiRoutes.route('/crn', crnRoutes);
 apiRoutes.route('/documents', documentsRoutes);
 apiRoutes.route('/memories', memoryRoutes);
 apiRoutes.route('/notes', notesRoutes);
@@ -2879,3 +2883,4 @@ apiRoutes.route('/ai', aiRoutes);
 apiRoutes.route('/planner', plannerRoutes);
 apiRoutes.route('/semesters', semestersRouter);
 apiRoutes.route('/tags', tagsRouter);
+apiRoutes.route('/ingest/syllabus', syllabusRouter);

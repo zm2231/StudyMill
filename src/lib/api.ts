@@ -231,6 +231,22 @@ class ApiClient {
   }
 
   /**
+   * Upload file with FormData (keeps raw Response for status handling)
+   */
+  async uploadFile(endpoint: string, formData: FormData, extraHeaders: Record<string, string> = {}): Promise<Response> {
+    const url = `${this.baseUrl}${endpoint}`;
+    const headers: Record<string, string> = {
+      ...this.getAuthHeader(),
+      ...extraHeaders,
+    };
+    return fetch(url, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+  }
+
+  /**
    * Refresh access token
    */
   private async refreshTokens(): Promise<boolean> {

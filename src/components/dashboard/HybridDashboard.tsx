@@ -4,7 +4,7 @@ import { Grid, Container, Stack } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { TodaysClasses } from './TodaysClasses';
+import { WeeklySchedule } from './TodaysClasses';
 import { ResumeSection } from './ResumeSection';
 import { RecentSection } from './RecentSection';
 import { ThisWeekWidget } from './ThisWeekWidget';
@@ -80,7 +80,7 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
             {/* Left Column: Main content */}
             <Grid.Col span={8}>
               <Stack gap="lg">
-                <TodaysClasses 
+                <WeeklySchedule 
                   onOpenAudioUpload={handleAudioUpload}
                   onOpenDocumentUpload={handleDocumentUpload}
                   refreshKey={refreshKey}
@@ -110,8 +110,8 @@ export function HybridDashboard({ className }: HybridDashboardProps) {
           // Single-column layout for narrow screens (≤1200px)
           <Grid.Col span={12}>
             <Stack gap="lg">
-              {/* Today's Classes - Full width */}
-              <TodaysClasses 
+              {/* Weekly Schedule - Full width */}
+              <WeeklySchedule 
                 onOpenAudioUpload={handleAudioUpload}
                 onOpenDocumentUpload={handleDocumentUpload}
                 refreshKey={refreshKey}

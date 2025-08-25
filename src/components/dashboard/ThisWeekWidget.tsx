@@ -162,9 +162,18 @@ export function ThisWeekWidget() {
             </div>
           </Group>
           
-          <ActionIcon variant="subtle" onClick={loadCurrentWeekData}>
-            <IconRefresh size={16} />
-          </ActionIcon>
+          <Group gap="xs">
+            <Button
+              size="xs"
+              variant="light"
+              onClick={() => router.push('/planner')}
+            >
+              Current Week
+            </Button>
+            <ActionIcon variant="subtle" onClick={loadCurrentWeekData} aria-label="Refresh">
+              <IconRefresh size={16} />
+            </ActionIcon>
+          </Group>
         </Group>
 
         {/* Progress */}

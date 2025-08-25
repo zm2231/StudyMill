@@ -74,18 +74,18 @@ const navigationHubs: NavigationHub[] = [
     description: 'Course management'
   },
   {
-    id: 'study',
-    label: 'Study',
-    icon: IconBrain,
-    href: '/study',
-    description: 'Flashcards & review'
-  },
-  {
     id: 'planner',
     label: 'Planner',
     icon: IconCalendar,
     href: '/planner',
     description: 'Schedule & deadlines'
+  },
+  {
+    id: 'study',
+    label: 'Study',
+    icon: IconBrain,
+    href: '/study',
+    description: 'Flashcards & review'
   },
   {
     id: 'analytics',
@@ -208,20 +208,15 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
             const Icon = hub.icon;
             const isActive = pathname === hub.href || pathname.startsWith(hub.href + '/');
             
-            const iconColor = isActive
-              ? 'var(--forest-green-primary)'
-              : 'var(--sanctuary-text-secondary)';
-
             const navItem = (
               <Button
                 component={Link}
                 href={hub.href}
-                prefetch={false}
                 key={hub.id}
                 variant={isActive ? 'light' : 'subtle'}
                 color={isActive ? 'forestGreen' : 'gray'}
                 fullWidth={!collapsed}
-                leftSection={<Icon size={20} color={iconColor} />}
+                leftSection={collapsed ? undefined : <Icon size={20} />}
                 rightSection={!collapsed && hub.badge ? (
                   <Badge size="xs" variant="light">
                     {hub.badge}
@@ -233,12 +228,12 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
                 styles={{
                   root: {
                     border: isActive ? '1px solid var(--forest-green-light)' : 'none',
-                    backgroundColor: isActive
-                      ? 'rgba(74, 124, 42, 0.1)'
+                    backgroundColor: isActive 
+                      ? 'rgba(74, 124, 42, 0.1)' 
                       : undefined,
                     '&:hover': {
-                      backgroundColor: isActive
-                        ? 'rgba(74, 124, 42, 0.15)'
+                      backgroundColor: isActive 
+                        ? 'rgba(74, 124, 42, 0.15)' 
                         : undefined
                     }
                   },
@@ -248,14 +243,21 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
                   }
                 }}
               >
-                <Stack gap={2} align="flex-start">
-                  <Text size="sm" fw={isActive ? 600 : 500}>
-                    {hub.label}
-                  </Text>
-                  <Text size="xs" c="dimmed">
-                    {hub.description}
-                  </Text>
-                </Stack>
+                {collapsed ? (
+                  <Icon 
+                    size={22} 
+                    color={isActive ? 'var(--forest-green-primary)' : 'var(--sanctuary-text-secondary)'} 
+                  />
+                ) : (
+                  <Stack gap={2} align="flex-start">
+                    <Text size="sm" fw={isActive ? 600 : 500}>
+                      {hub.label}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {hub.description}
+                    </Text>
+                  </Stack>
+                )}
               </Button>
             );
 

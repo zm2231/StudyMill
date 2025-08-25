@@ -19,6 +19,7 @@ import {
   ThemeIcon,
   Paper,
   Grid,
+  Select,
   rem
 } from '@mantine/core';
 import {
@@ -39,9 +40,12 @@ import {
   getCurrentWeekAssignments,
   updateAssignmentStatus,
   getPlannerStats,
+  getAcademicDates,
+  rebuildSemesterWeeks,
   type WeekBucket,
   type Assignment,
-  type PlannerStats
+  type PlannerStats,
+  type AcademicDate
 } from '@/lib/api/planner';
 
 interface WeekViewProps {
@@ -54,8 +58,10 @@ export function WeekView({ semesterId, onAssignmentClick }: WeekViewProps) {
   const [currentWeek, setCurrentWeek] = useState<WeekBucket | null>(null);
   const [stats, setStats] = useState<PlannerStats | null>(null);
   const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
+  const [currentWeekIndex, setCurrentWeekIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [academicDates, setAcademicDates] = useState<AcademicDate[]>([]);
 
   // Load data
   useEffect(() => {
@@ -64,24 +70,65 @@ export function WeekView({ semesterId, onAssignmentClick }: WeekViewProps) {
     }
   }, [semesterId]);
 
+  // Debug logging for arrow state
+  useEffect(() => {
+    console.log('WeekView Debug:', {
+      selectedWeekIndex,
+      weeksLength: weeks.length,
+      leftDisabled: selectedWeekIndex <= 0,
+      rightDisabled: selectedWeekIndex >= weeks.length - 1,
+      weeks: weeks.map(w => ({ week: w.week_number, start: w.start_date, end: w.end_date }))
+    });
+  }, [selectedWeekIndex, weeks]);
+
   const loadWeekData = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const [weeklyData, statsData] = await Promise.all([
+      const [weeklyData, statsData, acadDates] = await Promise.all([
         getAssignmentsByWeek(semesterId),
-        getPlannerStats(semesterId)
+        getPlannerStats(semesterId),
+        getAcademicDates(semesterId).catch(() => [])
       ]);
+
+      console.log('Loaded week data:', { 
+        weeksCount: weeklyData.weeks.length,
+        totalAssignments: weeklyData.total_assignments,
+        currentWeek: weeklyData.current_week
+      });
+
+      // If we got no weeks, try to rebuild them
+      if (weeklyData.weeks.length === 0) {
+        console.log('No weeks returned, attempting to rebuild...');
+        try {
+          const rebuildResult = await rebuildSemesterWeeks(semesterId);
+          console.log('Rebuild result:', rebuildResult);
+          
+          // Reload data after rebuild
+          const newWeeklyData = await getAssignmentsByWeek(semesterId);
+          weeklyData.weeks = newWeeklyData.weeks;
+        } catch (rebuildErr) {
+          console.error('Failed to rebuild weeks:', rebuildErr);
+        }
+      }
 
       setWeeks(weeklyData.weeks);
       setStats(statsData);
+      setAcademicDates(acadDates);
 
-      // Find current week and set as selected
-      const currentWeekIndex = weeklyData.weeks.findIndex(w => w.is_current_week);
-      if (currentWeekIndex >= 0) {
-        setSelectedWeekIndex(currentWeekIndex);
-        setCurrentWeek(weeklyData.weeks[currentWeekIndex]);
+      // Find current week and set as selected (fallback to client-side calc if needed)
+      let currentIdx = weeklyData.weeks.findIndex(w => (w as any).is_current_week);
+      if (currentIdx < 0) {
+        const localTodayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local tz
+        currentIdx = weeklyData.weeks.findIndex(w => w.start_date <= localTodayStr && w.end_date >= localTodayStr);
+      }
+      if (currentIdx >= 0) {
+        setSelectedWeekIndex(currentIdx);
+        setCurrentWeekIndex(currentIdx);
+        setCurrentWeek(weeklyData.weeks[currentIdx]);
+      } else {
+        setCurrentWeekIndex(null);
       }
     } catch (err) {
       console.error('Failed to load week data:', err);
@@ -234,15 +281,74 @@ export function WeekView({ semesterId, onAssignmentClick }: WeekViewProps) {
 
         {/* Week Navigation */}
         <Card withBorder p="lg">
-          <Group justify="space-between" mb="md">
-            <ActionIcon
-              variant="subtle"
-              onClick={() => setSelectedWeekIndex(Math.max(0, selectedWeekIndex - 1))}
-              disabled={selectedWeekIndex === 0}
-            >
-              <IconChevronLeft size={20} />
-            </ActionIcon>
+          <Stack gap="md">
+            {/* Navigation controls row */}
+            <Group justify="space-between" style={{ position: 'relative' }}>
+              {/* Left side controls */}
+              <Group gap="xs">
+                <Button
+                  variant="light"
+                  color="gray"
+                  size="compact-sm"
+                  px="xs"
+                  onClick={() => {
+                    console.log('Left arrow clicked, current index:', selectedWeekIndex, 'weeks:', weeks.length);
+                    const newIndex = Math.max(0, selectedWeekIndex - 1);
+                    setSelectedWeekIndex(newIndex);
+                  }}
+                  disabled={selectedWeekIndex <= 0 || weeks.length === 0}
+                  aria-label="Previous week"
+                >
+                  <IconChevronLeft size={18} />
+                </Button>
+                <Select
+                  data={weeks.map((w, i) => ({ value: String(i), label: `Week ${w.week_number}` }))}
+                  value={String(selectedWeekIndex)}
+                  onChange={(v) => { 
+                    if (v !== null) {
+                      const newIndex = Number(v);
+                      console.log('Select changed to:', newIndex);
+                      setSelectedWeekIndex(newIndex);
+                    }
+                  }}
+                  size="xs"
+                  maw={120}
+                  aria-label="Jump to week"
+                />
+                <Button
+                  size="xs"
+                  variant="light"
+                  onClick={() => {
+                    if (currentWeekIndex !== null) {
+                      console.log('Go to current clicked, index:', currentWeekIndex);
+                      setSelectedWeekIndex(currentWeekIndex);
+                    }
+                  }}
+                  disabled={currentWeekIndex === null || currentWeekIndex === selectedWeekIndex}
+                >
+                  Go to Current
+                </Button>
+              </Group>
 
+              {/* Right side control */}
+              <Button
+                variant="light"
+                color="gray"
+                size="compact-sm"
+                px="xs"
+                onClick={() => {
+                  console.log('Right arrow clicked, current index:', selectedWeekIndex, 'max:', weeks.length - 1);
+                  const newIndex = Math.min(weeks.length - 1, selectedWeekIndex + 1);
+                  setSelectedWeekIndex(newIndex);
+                }}
+                disabled={selectedWeekIndex >= weeks.length - 1 || weeks.length === 0}
+                aria-label="Next week"
+              >
+                <IconChevronRight size={18} />
+              </Button>
+            </Group>
+
+            {/* Week label (centered below controls) */}
             <div style={{ textAlign: 'center' }}>
               <Group gap="xs" justify="center">
                 <ThemeIcon 
@@ -267,15 +373,7 @@ export function WeekView({ semesterId, onAssignmentClick }: WeekViewProps) {
                 </Badge>
               )}
             </div>
-
-            <ActionIcon
-              variant="subtle"
-              onClick={() => setSelectedWeekIndex(Math.min(weeks.length - 1, selectedWeekIndex + 1))}
-              disabled={selectedWeekIndex === weeks.length - 1}
-            >
-              <IconChevronRight size={20} />
-            </ActionIcon>
-          </Group>
+          </Stack>
 
           {/* Week Progress */}
           <div style={{ width: '100%', padding: '0 2rem' }}>
@@ -294,6 +392,26 @@ export function WeekView({ semesterId, onAssignmentClick }: WeekViewProps) {
               radius="xl"
             />
           </div>
+
+          {/* Academic calendar banner for this week (UGA) */}
+          {(() => {
+            const wkNo = selectedWeek?.week_number;
+            const datesForWeek = academicDates.filter(d => d.week_number === wkNo);
+            if (!wkNo || datesForWeek.length === 0) return null;
+            return (
+              <Paper withBorder p="sm" mt="md" bg="var(--mantine-color-gray-0)">
+                <Group gap="xs" wrap="wrap">
+                  {datesForWeek.map((d, idx) => (
+                    <Badge key={`${d.date}-${idx}`} color={
+                      d.category === 'holiday' ? 'red' : d.category === 'break' ? 'yellow' : d.category === 'deadline' ? 'orange' : 'blue'
+                    } variant="light">
+                      {new Date(d.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}: {d.name}
+                    </Badge>
+                  ))}
+                </Group>
+              </Paper>
+            );
+          })()}
         </Card>
 
         {/* Assignments for Selected Week */}
@@ -412,6 +530,35 @@ export function WeekView({ semesterId, onAssignmentClick }: WeekViewProps) {
           >
             Refresh Data
           </Button>
+          {weeks.length === 0 && (
+            <Button
+              variant="light"
+              color="orange"
+              leftSection={<IconCalendarWeek size={16} />}
+              onClick={async () => {
+                try {
+                  setLoading(true);
+                  const result = await rebuildSemesterWeeks(semesterId);
+                  notifications.show({
+                    title: 'Success',
+                    message: `Rebuilt ${result.weeks} weeks for the semester`,
+                    color: 'green'
+                  });
+                  await loadWeekData();
+                } catch (error) {
+                  notifications.show({
+                    title: 'Error',
+                    message: 'Failed to rebuild weeks',
+                    color: 'red'
+                  });
+                } finally {
+                  setLoading(false);
+                }
+              }}
+            >
+              Rebuild Weeks
+            </Button>
+          )}
         </Group>
       </Stack>
     </Container>

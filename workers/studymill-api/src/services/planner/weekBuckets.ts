@@ -190,7 +190,8 @@ export function groupAssignmentsByWeek(
     }
   }
   
-  return weekBuckets.filter(bucket => bucket.assignments.length > 0 || bucket.is_current_week);
+  // Return all week buckets so UI can navigate across the whole semester
+  return weekBuckets;
 }
 
 /**

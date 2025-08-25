@@ -9,9 +9,9 @@
     "test": "echo \"No tests specified\" && exit 0",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "pages:build": "npm run build && npx @cloudflare/next-on-pages@1",
+    "pages:build": "npm run build && npx -y @cloudflare/next-on-pages@1 && node scripts/enable-nodejs-compat.mjs",
     "pages:dev": "npx @cloudflare/next-on-pages --watch",
-    "pages:deploy": "wrangler pages deploy .vercel/output/static"
+    "pages:deploy": "wrangler pages deploy"
   },
   "dependencies": {
     "@mantine/core": "^8.2.5",

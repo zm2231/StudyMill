@@ -1,9 +1,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import * as pdfjs from 'pdfjs-dist';
-import mammoth from 'mammoth';
 import { SyllabusExtractor, ExtractedSyllabus } from '../../services/syllabus/extract';
+import { ParseExtractService } from '../../services/parseExtract';
 
 // Request schema for syllabus ingestion
 const syllabusIngestSchema = z.object({
@@ -174,7 +173,7 @@ async function processSyllabusDocument(
   }
 
   // Get file from R2
-  const file = await env.DOCUMENTS_BUCKET.get(document.r2_key);
+  const file = await env.BUCKET.get(document.r2_key);
   if (!file) {
     throw new Error('Document file not found in storage');
   }
@@ -186,12 +185,11 @@ async function processSyllabusDocument(
   const fileType = document.file_type.toLowerCase();
   
   if (fileType.includes('pdf')) {
-    // Use pdfjs for PDF extraction
-    extractedText = await extractTextFromPDF(fileBuffer);
+    // Use ParseExtract for PDF extraction (Workers-safe)
+    extractedText = await extractTextFromPDFWithParseExtract(env, fileBuffer, document.filename || 'document.pdf');
   } else if (fileType.includes('word') || fileType.includes('docx')) {
-    // Use mammoth for Word documents
-    const result = await mammoth.extractRawText({ arrayBuffer: fileBuffer });
-    extractedText = result.value;
+    // Use ParseExtract for DOCX/Word documents
+    extractedText = await extractTextFromDocWithParseExtract(env, fileBuffer, document.filename || 'document.docx', document.file_type);
   } else if (fileType.includes('image') || fileType.includes('png') || fileType.includes('jpg') || fileType.includes('jpeg')) {
     // Use ParseExtract for images
     if (useParseExtract) {
@@ -200,7 +198,8 @@ async function processSyllabusDocument(
       throw new Error('Image processing requires ParseExtract API');
     }
   } else {
-    throw new Error(`Unsupported file type: ${fileType}`);
+    // Fallback: try ParseExtract for other types as well
+    extractedText = await extractTextFromGenericWithParseExtract(env, fileBuffer, document.filename || 'document', document.file_type);
   }
 
   // Use AI to extract structured data
@@ -230,21 +229,24 @@ async function processSyllabusDocument(
   return await extractor.extractFromText(extractedText, documentType);
 }
 
-// Extract text from PDF
-async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
-  const pdf = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
-  let fullText = '';
-  
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      .map((item: any) => item.str)
-      .join(' ');
-    fullText += pageText + '\n';
+// Extract text from PDF using ParseExtract API (Workers-safe)
+async function extractTextFromPDFWithParseExtract(
+  env: Env,
+  buffer: ArrayBuffer,
+  fileName: string
+): Promise<string> {
+  if (!env.temp_PARSE_EXTRACT_API_KEY) {
+    throw new Error('ParseExtract API key not configured');
   }
-  
-  return fullText;
+
+  const service = new ParseExtractService(env.temp_PARSE_EXTRACT_API_KEY);
+  const result = await service.processDocument(buffer, 'application/pdf', fileName);
+
+  if (!result.success || !result.data?.text) {
+    throw new Error(result.error || 'Failed to extract text from PDF');
+  }
+
+  return result.data.text;
 }
 
 // Extract text from image using ParseExtract API
@@ -253,7 +255,7 @@ async function extractTextFromImageWithParseExtract(
   buffer: ArrayBuffer,
   mimeType: string
 ): Promise<string> {
-  if (!env.PARSEEXTRACT_API_KEY) {
+  if (!env.temp_PARSE_EXTRACT_API_KEY) {
     throw new Error('ParseExtract API key not configured');
   }
 
@@ -264,7 +266,7 @@ async function extractTextFromImageWithParseExtract(
   const response = await fetch('https://api.parseextract.com/v1/ocr', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${env.PARSEEXTRACT_API_KEY}`,
+'Authorization': `Bearer ${env.temp_PARSE_EXTRACT_API_KEY}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
@@ -280,6 +282,49 @@ async function extractTextFromImageWithParseExtract(
 
   const result = await response.json();
   return result.text || '';
+}
+
+// Extract text from DOCX/Word using ParseExtract API
+async function extractTextFromDocWithParseExtract(
+  env: Env,
+  buffer: ArrayBuffer,
+  fileName: string,
+  mimeType: string
+): Promise<string> {
+  if (!env.temp_PARSE_EXTRACT_API_KEY) {
+    throw new Error('ParseExtract API key not configured');
+  }
+
+  const service = new ParseExtractService(env.temp_PARSE_EXTRACT_API_KEY);
+  const type = mimeType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const result = await service.processDocument(buffer, type, fileName);
+
+  if (!result.success || !result.data?.text) {
+    throw new Error(result.error || 'Failed to extract text from DOCX');
+  }
+
+  return result.data.text;
+}
+
+// Generic extractor using ParseExtract for other file types
+async function extractTextFromGenericWithParseExtract(
+  env: Env,
+  buffer: ArrayBuffer,
+  fileName: string,
+  mimeType: string
+): Promise<string> {
+  if (!env.temp_PARSE_EXTRACT_API_KEY) {
+    throw new Error('ParseExtract API key not configured');
+  }
+
+  const service = new ParseExtractService(env.temp_PARSE_EXTRACT_API_KEY);
+  const result = await service.processDocument(buffer, mimeType || 'application/octet-stream', fileName);
+
+  if (!result.success || !result.data?.text) {
+    throw new Error(result.error || 'Failed to extract text');
+  }
+
+  return result.data.text;
 }
 
 // Store extracted syllabus data in database

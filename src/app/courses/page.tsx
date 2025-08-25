@@ -17,7 +17,8 @@ import {
   Text,
   Menu,
   Checkbox,
-  Breadcrumbs
+  Breadcrumbs,
+  Alert
 } from '@mantine/core';
 import {
   IconEdit,
@@ -36,6 +37,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AppShell } from '@/components/layout/AppShell';
 import { CourseCreation } from '@/components/courses/CourseCreation';
 import { notifications } from '@mantine/notifications';
+import { useUserPreferences } from '@/hooks/useUserPreferences';
 
 interface Semester {
   id: string;
@@ -72,6 +74,7 @@ export default function CoursesPage() {
   const [semesters, setSemesters] = useState<Semester[]>([]);
   const [courses, setCourses] = useState<CourseWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
+  const { preferences } = useUserPreferences();
 
   useEffect(() => {
     fetchSemesters();
@@ -252,11 +255,31 @@ export default function CoursesPage() {
               <Title order={2}>Course Management</Title>
               <Button
                 leftSection={<IconPlus size={16} />}
-                onClick={() => setShowCreateModal(true)}
+                onClick={() => {
+                  if (preferences.universityId === 'uga') {
+                    router.push('/courses/new/crn');
+                  } else {
+                    setShowCreateModal(true);
+                  }
+                }}
               >
                 New Course
               </Button>
             </Group>
+
+            {preferences.universityId === 'uga' && (
+              <Alert variant="light" color="red">
+                <Group justify="space-between" wrap="wrap">
+                  <div>
+                    <Text fw={600}>UGA detected</Text>
+                    <Text size="sm" c="dimmed">Add courses faster via CRN using the official UGA catalog.</Text>
+                  </div>
+                  <Button size="xs" variant="light" color="red" onClick={() => router.push('/courses/new/crn')}>
+                    Add by CRN
+                  </Button>
+                </Group>
+              </Alert>
+            )}
 
             <Card withBorder p="md">
               <Group gap="md">

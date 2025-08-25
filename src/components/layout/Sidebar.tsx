@@ -56,16 +56,16 @@ const navItems: NavItem[] = [
     description: 'Course management'
   },
   {
-    label: 'Study',
-    href: '/study',
-    icon: IconBrain,
-    description: 'Flashcards & review'
-  },
-  {
     label: 'Planner',
     href: '/planner',
     icon: IconCalendar, 
     description: 'Schedule & deadlines'
+  },
+  {
+    label: 'Study',
+    href: '/study',
+    icon: IconBrain,
+    description: 'Flashcards & review'
   },
   {
     label: 'Analytics',

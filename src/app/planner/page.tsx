@@ -15,7 +15,8 @@ import {
   Tabs,
   Alert,
   Loader,
-  rem
+  rem,
+  Badge
 } from '@mantine/core';
 import { 
   IconCalendarTime, 
@@ -26,7 +27,10 @@ import {
   IconAlertCircle
 } from '@tabler/icons-react';
 import { WeekView } from '@/components/planner/WeekView';
+import { CalendarView } from '@/components/planner/CalendarView';
 import { getCurrentWeekAssignments } from '@/lib/api/planner';
+import { useUserPreferences } from '@/hooks/useUserPreferences';
+import { UNIVERSITIES } from '@/types/university';
 
 interface Semester {
   id: string;
@@ -41,6 +45,8 @@ export default function PlannerPage() {
   const [selectedSemester, setSelectedSemester] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { preferences } = useUserPreferences();
+  const isUGA = preferences.universityId === 'uga';
 
   // Load semesters on mount
   useEffect(() => {
@@ -123,7 +129,61 @@ export default function PlannerPage() {
                   <Text ta="center" c="dimmed">
                     Create a semester first to start planning your assignments and schedule.
                   </Text>
-                  <Button leftSection={<IconSettings size={16} />} variant="light">
+                  <Button 
+                    leftSection={<IconSettings size={16} />} 
+                    variant="light"
+                    onClick={async () => {
+                      try {
+                        const { apiClient } = await import('@/lib/api');
+                        // Hardcoded academic terms and date windows (Fall 2025 / Spring 2026 / Summer 2026)
+                        const terms = [
+                          { name: 'Fall 2025',   start_date: '2025-08-15', end_date: '2025-12-15' },
+                          { name: 'Spring 2026', start_date: '2026-01-15', end_date: '2026-05-15' },
+                          { name: 'Summer 2026', start_date: '2026-05-16', end_date: '2026-08-15' },
+                        ];
+                        
+                        const today = new Date();
+                        const pick = ((): { name: string; start_date: string; end_date: string } => {
+                          for (const t of terms) {
+                            const s = new Date(t.start_date + 'T00:00:00Z');
+                            const e = new Date(t.end_date + 'T23:59:59Z');
+                            if (today >= s && today <= e) return t;
+                          }
+                          // Default to first term (Fall 2025) if no match
+                          return terms[0];
+                        })();
+                        
+                        const payload = {
+                          name: pick.name,
+                          start_date: pick.start_date,
+                          end_date: pick.end_date,
+                          is_current: true
+                        };
+                        
+                        const created = await apiClient.request<{ semester: { id: string } }>(
+                          '/api/v1/semesters',
+                          { method: 'POST', body: JSON.stringify(payload) }
+                        );
+                        const newId = (created as any).semester?.id;
+
+                        // Optional: trigger week buckets build for this semester
+                        if (newId) {
+                          try {
+                            await apiClient.request(`/api/v1/planner/weeks/${newId}/rebuild`, { method: 'POST' });
+                          } catch (e) {
+                            console.warn('Week rebuild failed (will continue):', e);
+                          }
+                        }
+                        
+                        // Reload semesters and select the new one
+                        await loadSemesters();
+                        if (newId) setSelectedSemester(newId);
+                      } catch (err) {
+                        console.error('Failed to create semester:', err);
+                        setError(err instanceof Error ? err.message : 'Failed to create semester');
+                      }
+                    }}
+                  >
                     Create Semester
                   </Button>
                 </Stack>
@@ -149,16 +209,21 @@ export default function PlannerPage() {
                 </Text>
               </div>
               
-              <Select
-                placeholder="Select semester"
-                value={selectedSemester}
-                onChange={(value) => setSelectedSemester(value || '')}
-                data={semesters.map(s => ({
-                  value: s.id,
-                  label: `${s.name}${s.is_current ? ' (Current)' : ''}`
-                }))}
-                style={{ minWidth: 200 }}
-              />
+              <Group gap="md">
+                {isUGA && (
+                  <Badge color="red" variant="light">UGA Academic Dates Active</Badge>
+                )}
+                <Select
+                  placeholder="Select semester"
+                  value={selectedSemester}
+                  onChange={(value) => setSelectedSemester(value || '')}
+                  data={semesters.map(s => ({
+                    value: s.id,
+                    label: `${s.name}${s.is_current ? ' (Current)' : ''}`
+                  }))}
+                  style={{ minWidth: 200 }}
+                />
+              </Group>
             </Group>
 
             {/* Main Content */}
@@ -196,15 +261,7 @@ export default function PlannerPage() {
                 </Tabs.Panel>
 
                 <Tabs.Panel value="calendar" pt="md">
-                  <Card p="xl" radius="md" withBorder>
-                    <Stack gap="md" align="center">
-                      <IconCalendar size={48} color="var(--mantine-color-gray-5)" />
-                      <Title order={3} ta="center">Calendar View Coming Soon</Title>
-                      <Text ta="center" c="dimmed">
-                        Full calendar integration with React Big Calendar will be available soon.
-                      </Text>
-                    </Stack>
-                  </Card>
+                  <CalendarView semesterId={selectedSemester} />
                 </Tabs.Panel>
 
                 <Tabs.Panel value="analytics" pt="md">

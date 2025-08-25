@@ -77,6 +77,7 @@ export function SyllabusIngestSummary({
   const [parsedData, setParsedData] = useState<ParsedSyllabusData | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploaderOpen, setUploaderOpen] = useState<null | 'syllabus' | 'schedule'>(null);
 
   const handleSyllabusUpload = (documentId: string) => {
     setSyllabusDocumentId(documentId);
@@ -247,11 +248,7 @@ export function SyllabusIngestSummary({
                   <Button
                     variant="outline"
                     leftSection={<IconUpload size={16} />}
-                    onClick={() => {
-                      // TODO: Open document uploader for syllabus
-                      // For now, simulate upload
-                      setSyllabusDocumentId('syllabus-123');
-                    }}
+                    onClick={() => setUploaderOpen('syllabus')}
                   >
                     Upload Syllabus
                   </Button>
@@ -281,11 +278,7 @@ export function SyllabusIngestSummary({
                   <Button
                     variant="outline"
                     leftSection={<IconUpload size={16} />}
-                    onClick={() => {
-                      // TODO: Open document uploader for schedule
-                      // For now, simulate upload
-                      setScheduleDocumentId('schedule-456');
-                    }}
+                    onClick={() => setUploaderOpen('schedule')}
                   >
                     Upload Schedule
                   </Button>
@@ -475,6 +468,25 @@ export function SyllabusIngestSummary({
           </>
         )}
       </Stack>
+
+      {/* Document Uploader integration */}
+      {uploaderOpen && (
+        <DocumentUploader
+          opened={!!uploaderOpen}
+          onClose={() => setUploaderOpen(null)}
+          preselectedCourseId={courseId}
+          hideCourseSelect
+          documentType={uploaderOpen === 'syllabus' ? 'syllabus' : 'schedule'}
+          allowMultiple={false}
+          onUploaded={(ids) => {
+            const id = ids[0];
+            if (!id) return;
+            if (uploaderOpen === 'syllabus') setSyllabusDocumentId(id);
+            if (uploaderOpen === 'schedule') setScheduleDocumentId(id);
+            setUploaderOpen(null);
+          }}
+        />
+      )}
     </Modal>
   );
 }

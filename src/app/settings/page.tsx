@@ -4,6 +4,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AppShell } from '@/components/layout/AppShell';
 import { Container, Title, Text, Stack, Card, Divider, Group } from '@mantine/core';
 import { UniversitySelect } from '@/components/settings/UniversitySelect';
+import { TimezoneSelect } from '@/components/settings/TimezoneSelect';
 import { IconSchool, IconSettings, IconUser } from '@tabler/icons-react';
 
 export default function SettingsPage() {
@@ -33,6 +34,20 @@ export default function SettingsPage() {
               <UniversitySelect 
                 description="This will enable hardcoded semester options for your institution and prepare for future course import features."
               />
+            </Card>
+
+            {/* Time & Locale */}
+            <Card withBorder padding="lg">
+              <Group gap="xs" mb="md">
+                <IconSettings size={20} />
+                <Title order={3}>Time & Locale</Title>
+              </Group>
+
+              <Text size="sm" c="dimmed" mb="md">
+                Set your preferred timezone to ensure week calculations and dates are accurate.
+              </Text>
+
+              <TimezoneSelect />
             </Card>
 
             {/* Account Settings */}

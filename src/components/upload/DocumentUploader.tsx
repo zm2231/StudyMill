@@ -46,6 +46,9 @@ interface DocumentUploaderProps {
   allowMultiple?: boolean;
   maxFileSize?: number; // in MB
   acceptedFormats?: string[];
+  hideCourseSelect?: boolean;
+  documentType?: 'syllabus' | 'schedule' | 'unknown';
+  onUploaded?: (documentIds: string[]) => void;
 }
 
 interface UploadedFile {
@@ -57,6 +60,7 @@ interface UploadedFile {
   progress: number;
   status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error';
   error?: string;
+  serverId?: string;
 }
 
 const DEFAULT_ACCEPTED_FORMATS = [
@@ -96,7 +100,10 @@ export function DocumentUploader({
   onError,
   allowMultiple = true,
   maxFileSize = 50, // 50MB default
-  acceptedFormats = DEFAULT_ACCEPTED_FORMATS
+  acceptedFormats = DEFAULT_ACCEPTED_FORMATS,
+  hideCourseSelect = false,
+  documentType = 'unknown',
+  onUploaded
 }: DocumentUploaderProps) {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<string | null>(preselectedCourseId || null);
@@ -211,7 +218,7 @@ export function DocumentUploader({
     setFiles(prev => prev.filter(f => f.id !== fileId));
   };
 
-  const uploadFile = async (uploadFile: UploadedFile) => {
+  const uploadFile = async (uploadFile: UploadedFile): Promise<string | null> => {
     // Update file status to uploading
     setFiles(prev => prev.map(f => 
       f.id === uploadFile.id ? { ...f, status: 'uploading' } : f
@@ -222,7 +229,7 @@ export function DocumentUploader({
       const formData = new FormData();
       formData.append('file', uploadFile.file);
       formData.append('courseId', selectedCourse || '');
-      formData.append('processingMode', processingMode);
+      if (documentType) formData.append('documentType', documentType);
       if (customTags) {
         formData.append('tags', customTags);
       }
@@ -237,20 +244,26 @@ export function DocumentUploader({
         }));
       }, 200);
 
-      // Upload file
+      // Upload file with idempotency key
       const { apiClient } = await import('@/lib/api');
-      const response = await apiClient.uploadFile('/api/v1/documents/upload', formData);
+      const idempotencyKey = `du_${uploadFile.id}`;
+      const response = await apiClient.uploadFile('/api/v1/documents/upload', formData, {
+        'Idempotency-Key': idempotencyKey
+      });
 
       clearInterval(progressInterval);
 
       if (response.ok) {
+        const json = await response.json().catch(() => ({} as any));
+        const serverId = json?.documentId || json?.document?.id || null;
         setFiles(prev => prev.map(f => 
           f.id === uploadFile.id 
-            ? { ...f, status: 'completed', progress: 100 } 
+            ? { ...f, status: 'completed', progress: 100, serverId } 
             : f
         ));
+        return serverId;
       } else {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({ message: 'Upload failed' }));
         throw new Error(error.message || 'Upload failed');
       }
     } catch (error) {
@@ -259,6 +272,7 @@ export function DocumentUploader({
           ? { ...f, status: 'error', error: error instanceof Error ? error.message : 'Upload failed' } 
           : f
       ));
+      return null;
     }
   };
 
@@ -286,10 +300,15 @@ export function DocumentUploader({
     try {
       // Upload all pending files
       const pendingFiles = files.filter(f => f.status === 'pending');
-      await Promise.all(pendingFiles.map(uploadFile));
+      const ids = await Promise.all(pendingFiles.map(uploadFile));
+      const uploadedIds = ids.filter((id): id is string => Boolean(id));
 
-      // Check if all files uploaded successfully
-      const allSuccess = files.every(f => f.status === 'completed');
+      // Determine current files state success
+      const allSuccess = uploadedIds.length === pendingFiles.length;
+      
+      if (uploadedIds.length > 0) {
+        onUploaded?.(uploadedIds);
+      }
       
       if (allSuccess) {
         onSuccess?.();
@@ -323,15 +342,17 @@ export function DocumentUploader({
     >
       <Stack gap="md">
         {/* Course Selection */}
-        <Select
-          label="Select Course"
-          placeholder="Choose a course"
-          value={selectedCourse}
-          onChange={setSelectedCourse}
-          data={courseOptions}
-          required
-          searchable
-        />
+        {hideCourseSelect ? null : (
+          <Select
+            label="Select Course"
+            placeholder="Choose a course"
+            value={selectedCourse}
+            onChange={setSelectedCourse}
+            data={courseOptions}
+            required
+            searchable
+          />
+        )}
 
         {/* File Drop Zone */}
         <Paper

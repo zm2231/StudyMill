@@ -126,15 +126,33 @@ app.get('/assignments/:semesterId/by-week',
         return c.json({ error: 'Unauthorized' }, 401);
       }
       
-      // Get course weeks
-      const weeks = await c.env.DB.prepare(`
+  // Get course weeks
+  let weeks = await c.env.DB.prepare(`
         SELECT * FROM course_weeks 
         WHERE semester_id = ?
         ORDER BY week_number ASC
       `).bind(semesterId).all();
-      
-      // Get assignments for courses in this semester
-      const assignments = await c.env.DB.prepare(`
+
+  console.log(`Found ${weeks.results.length} weeks for semester ${semesterId}`);
+
+  // If weeks missing (semester not initialized), rebuild buckets then refetch
+  if (weeks.results.length === 0) {
+    console.log('No weeks found, attempting to rebuild...');
+    try {
+      await rebuildSemesterWeeks(c.env, semesterId);
+      weeks = await c.env.DB.prepare(`
+        SELECT * FROM course_weeks 
+        WHERE semester_id = ?
+        ORDER BY week_number ASC
+      `).bind(semesterId).all();
+      console.log(`After rebuild: ${weeks.results.length} weeks`);
+    } catch (e) {
+      console.warn('Failed to rebuild weeks for assignments/by-week route:', e);
+    }
+  }
+  
+  // Get assignments for courses in this semester
+  const assignments = await c.env.DB.prepare(`
         SELECT a.*, c.name as course_name, c.color as course_color
         FROM assignments a
         JOIN courses c ON a.course_id = c.id
@@ -284,6 +302,66 @@ app.get('/stats/:semesterId',
     } catch (error) {
       console.error('Error fetching planner stats:', error);
       return c.json({ error: 'Failed to fetch stats' }, 500);
+    }
+  }
+);
+
+/**
+ * GET /planner/academic-dates/:semesterId
+ * Return academic calendar dates within the semester range, annotated with week_number
+ */
+app.get('/academic-dates/:semesterId',
+  zValidator('param', SemesterParamsSchema),
+  async (c) => {
+    try {
+      const { semesterId } = c.req.valid('param');
+      const userId = c.get('userId');
+
+      if (!userId) {
+        return c.json({ error: 'Unauthorized' }, 401);
+      }
+
+      // Verify user owns this semester and fetch its date range
+      const semester = await c.env.DB.prepare(
+        'SELECT id, start_date, end_date FROM semesters WHERE id = ? AND user_id = ?'
+      ).bind(semesterId, userId).first<{ id: string; start_date: string; end_date: string }>();
+
+      if (!semester) {
+        return c.json({ error: 'Semester not found' }, 404);
+      }
+
+      // Get course weeks for mapping dates to week_number
+      const weeks = await c.env.DB.prepare(
+        'SELECT week_number, start_date, end_date FROM course_weeks WHERE semester_id = ? ORDER BY week_number ASC'
+      ).bind(semesterId).all<{ week_number: number; start_date: string; end_date: string }>();
+
+      // Fetch academic dates within semester range
+      const dates = await c.env.DB.prepare(
+        `SELECT id, term_code, date, name, category, campus, notes
+         FROM academic_calendar_dates
+         WHERE date BETWEEN ? AND ?
+         ORDER BY date ASC`
+      ).bind(semester.start_date, semester.end_date).all<{
+        id: string; term_code: string; date: string; name: string; category: string | null; campus: string | null; notes: string | null;
+      }>();
+
+      // Map to include week_number
+      const withWeeks = (dates.results || []).map((d) => {
+        const wk = (weeks.results || []).find(w => w.start_date <= d.date && w.end_date >= d.date);
+        return {
+          date: d.date,
+          name: d.name,
+          category: d.category || null,
+          campus: d.campus || null,
+          notes: d.notes || null,
+          week_number: wk?.week_number || null
+        };
+      });
+
+      return c.json({ dates: withWeeks });
+    } catch (error) {
+      console.error('Error fetching academic dates:', error);
+      return c.json({ error: 'Failed to fetch academic dates' }, 500);
     }
   }
 );

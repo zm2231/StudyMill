@@ -48,6 +48,15 @@ export interface WeeklyAssignmentsResponse {
   total_assignments: number;
 }
 
+export interface AcademicDate {
+  date: string; // YYYY-MM-DD
+  name: string;
+  category: 'holiday' | 'break' | 'deadline' | 'event' | null;
+  campus: string | null;
+  notes: string | null;
+  week_number: number | null;
+}
+
 export interface CurrentWeekResponse {
   assignments: Assignment[];
   week_start: string;
@@ -104,6 +113,14 @@ export async function autoAssignWeekNumbers(courseId: string): Promise<{ message
  */
 export async function getPlannerStats(semesterId: string): Promise<PlannerStats> {
   return apiClient.request(`/api/v1/planner/stats/${semesterId}`);
+}
+
+/**
+ * Get academic calendar dates within the semester range
+ */
+export async function getAcademicDates(semesterId: string): Promise<AcademicDate[]> {
+  const data = await apiClient.request<{ dates: AcademicDate[] }>(`/api/v1/planner/academic-dates/${semesterId}`);
+  return data.dates;
 }
 
 /**
