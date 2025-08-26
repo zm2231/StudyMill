@@ -75,6 +75,13 @@ export class ChatDurableObject extends DurableObject {
       return new Response('Unauthorized', { status: 401 });
     }
 
+    // Align sessionId with client-provided value (for DB consistency)
+    const url = new URL(request.url);
+    const incomingSessionId = url.searchParams.get('sessionId');
+    if (incomingSessionId) {
+      this.sessionId = incomingSessionId;
+    }
+
     // Create WebSocket pair
     const webSocketPair = new WebSocketPair();
     const [client, server] = Object.values(webSocketPair);
@@ -111,6 +118,19 @@ export class ChatDurableObject extends DurableObject {
     // Load or create chat session
     await this.ensureChatSession(userId);
 
+    // Structured server log for connection
+    try {
+      const ts = new Date().toISOString();
+      console.log(
+        JSON.stringify({
+          event: 'chat_ws_connected',
+          ts,
+          sessionId: this.sessionId,
+          userId
+        })
+      );
+    } catch {}
+
     // Send session info to client
     server.send(JSON.stringify({
       type: 'session_info',
@@ -145,11 +165,12 @@ export class ChatDurableObject extends DurableObject {
         default:
           console.warn('Unknown message type:', data.type);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error handling WebSocket message:', error);
       client.websocket.send(JSON.stringify({
         type: 'error',
-        message: 'Failed to process message'
+        code: 'MESSAGE_HANDLER_ERROR',
+        message: error?.message || 'Failed to process message'
       }));
     }
   }
@@ -173,8 +194,14 @@ export class ChatDurableObject extends DurableObject {
 
     await this.storeMessage(userMessage);
 
-    // Broadcast user message to all clients
-    this.broadcastToAll({
+    // Send acknowledgment to sender with the stored message (confirming it was saved)
+    client.websocket.send(JSON.stringify({
+      type: 'message_ack',
+      message: userMessage
+    }));
+
+    // Broadcast user message to OTHER clients only
+    this.broadcastToOthers(client, {
       type: 'message',
       message: userMessage
     });
@@ -219,15 +246,25 @@ export class ChatDurableObject extends DurableObject {
    * Generate AI response using Gemini Flash and stream back to clients
    */
   private async generateAIResponse(query: string, context: string, userId: string, courseId?: string) {
+    // Prepare variables outside try so we can handle partials on error
+    let assistantMessage: ChatMessage = {
+      id: 'msg_' + crypto.randomUUID(),
+      sessionId: this.sessionId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString()
+    };
+    let fullContent = '';
+
     try {
-      // Create assistant message placeholder
-      const assistantMessage: ChatMessage = {
-        id: 'msg_' + crypto.randomUUID(),
-        sessionId: this.sessionId,
-        role: 'assistant',
-        content: '',
-        timestamp: new Date().toISOString()
-      };
+      // Create assistant message placeholder (already initialized above)
+
+      // Broadcast model info (will be updated if fallback occurs)
+      if (!this.env.GEMINI_API_KEY) {
+        this.broadcastToAll({ type: 'ai_info', model: '@cf/meta/llama-3.1-8b-instruct', reason: 'no_gemini_key' });
+      } else {
+        this.broadcastToAll({ type: 'ai_info', model: 'gemini-2.5-flash' });
+      }
 
       // Broadcast message start
       this.broadcastToAll({
@@ -238,7 +275,43 @@ export class ChatDurableObject extends DurableObject {
       // Prepare prompt with context
       const prompt = this.buildPrompt(query, context);
 
+      // If no Gemini key is configured, fallback to Cloudflare Workers AI
+      if (!this.env.GEMINI_API_KEY) {
+        try {
+        const result = await (this.env as any).AI.run('@cf/meta/llama-3.1-8b-instruct', { prompt: this.buildPrompt(query, context), max_tokens: 1024, temperature: 0.7 });
+          const text = (result && (result.response || result.text || result.output)) ? (result.response || result.text || result.output) : String(result ?? '');
+          assistantMessage.content = text;
+          // Stream as a single chunk for now
+          this.broadcastToAll({ type: 'message_chunk', messageId: assistantMessage.id, chunk: text });
+          await this.storeMessage(assistantMessage);
+          this.broadcastToAll({ type: 'message_complete', messageId: assistantMessage.id, message: assistantMessage });
+          return;
+        } catch (fallbackErr) {
+          console.error('Workers AI fallback failed:', fallbackErr);
+          throw fallbackErr;
+        }
+      }
+
       // Use Gemini 2.5 Flash for response generation with streaming
+      const systemPrompt = [
+        'You are StudyMill AI, the academic assistant inside the StudyMill app.',
+        'Capabilities:',
+        '- Retrieve context via StudyMill\'s hybrid search (documents, memories, audio summaries).',
+        '- Cite sources when drawing from provided context. Prefer clear inline citations like [Document Title] or [Memory].',
+        '- Ask clarifying questions when the query is underspecified.',
+        '- Provide helpful, educational, and stepwise explanations (focus on learning outcomes).',
+        '- Never invent references or page numbers; only cite what is present in context.',
+        '- If context is missing, say so briefly and answer with general guidance.',
+        'Style:',
+        '- Be concise but thorough, structured with short paragraphs and lists when appropriate.',
+        '- Use neutral, supportive tone. Avoid speculation.',
+        'Safety:',
+        '- Decline requests that are unsafe, disallowed by policy, or would produce harmful outcomes.',
+      ].join('\n');
+
+      // Streaming request with timeout
+      const ac = new AbortController();
+      const streamTimeout = setTimeout(() => ac.abort('stream_timeout'), 30000); // 30s safety
       const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=${this.env.GEMINI_API_KEY}`, {
         method: 'POST',
         headers: {
@@ -250,22 +323,34 @@ export class ChatDurableObject extends DurableObject {
             parts: [{ text: prompt }]
           }],
           systemInstruction: {
-            parts: [{ text: 'You are StudyMill AI, a helpful academic assistant. Use the provided context to answer questions accurately and cite sources when relevant. Provide clear, educational responses that help students learn.' }]
+            parts: [{ text: systemPrompt }]
           },
           generationConfig: {
             temperature: 0.7,
-            maxOutputTokens: 2048,
+            maxOutputTokens: 8192,  // Increased from 2048 for longer responses
             topP: 0.8,
             topK: 40
           }
-        })
+        }),
+        signal: ac.signal
       });
+      clearTimeout(streamTimeout);
 
       if (!geminiResponse.ok) {
-        throw new Error(`Gemini API error: ${geminiResponse.status} ${geminiResponse.statusText}`);
+        const errText = await geminiResponse.text().catch(() => '');
+        // Structured log for diagnostics
+        try {
+          console.error(JSON.stringify({
+            event: 'gemini_stream_http_error',
+            ts: new Date().toISOString(),
+            status: geminiResponse.status,
+            statusText: geminiResponse.statusText,
+            body: errText.slice(0, 500)
+          }));
+        } catch {}
+        throw new Error(`Gemini API error: ${geminiResponse.status} ${geminiResponse.statusText} ${errText}`);
       }
 
-      let fullContent = '';
       const reader = geminiResponse.body?.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -281,21 +366,22 @@ export class ChatDurableObject extends DurableObject {
             buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
             for (const line of lines) {
-              if (line.trim() === '') continue;
-              
-              // Gemini streams JSON objects, sometimes with data: prefix
-              const cleanLine = line.replace(/^data: /, '').trim();
-              
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+
+              // Gemini streams JSON objects, sometimes with data: prefix, and may include [DONE]
+              const cleanLine = trimmed.replace(/^data:\s*/, '');
+              if (cleanLine === '[DONE]') continue;
+
               try {
                 const parsed = JSON.parse(cleanLine);
-                
+
                 // Extract text from Gemini response structure
-                if (parsed.candidates && parsed.candidates[0] && parsed.candidates[0].content) {
-                  const parts = parsed.candidates[0].content.parts;
-                  if (parts && parts[0] && parts[0].text) {
-                    const textChunk = parts[0].text;
+                const parts = parsed?.candidates?.[0]?.content?.parts;
+                if (Array.isArray(parts)) {
+                  const textChunk = parts.map((p: any) => p?.text || '').filter(Boolean).join('');
+                  if (textChunk) {
                     fullContent += textChunk;
-                    
                     // Broadcast chunk to all clients
                     this.broadcastToAll({
                       type: 'message_chunk',
@@ -315,11 +401,90 @@ export class ChatDurableObject extends DurableObject {
         }
       }
 
-      // Update message with full content
+      // Flush any remaining buffered line (in case stream ended without newline)
+      if (buffer && buffer.trim()) {
+        try {
+          const cleanLine = buffer.trim().replace(/^data:\s*/, '');
+          if (cleanLine !== '[DONE]') {
+            const parsed = JSON.parse(cleanLine);
+            const parts = parsed?.candidates?.[0]?.content?.parts;
+            if (Array.isArray(parts)) {
+              const textChunk = parts.map((p: any) => p?.text || '').filter(Boolean).join('');
+              if (textChunk) {
+                fullContent += textChunk;
+                this.broadcastToAll({
+                  type: 'message_chunk',
+                  messageId: assistantMessage.id,
+                  chunk: textChunk
+                });
+              }
+            }
+          }
+        } catch (e) {
+          // ignore final parse failure
+        }
+      }
+
+      // If no content arrived from stream, attempt a non-streaming retry with the same model
+      if (!fullContent || fullContent.trim().length === 0) {
+        try {
+          this.broadcastToAll({ type: 'ai_info', model: 'gemini-2.5-flash', reason: 'retry_nonstream' });
+          const ac2 = new AbortController();
+          const nonStreamTimeout = setTimeout(() => ac2.abort('nonstream_timeout'), 25000);
+          const retryResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${this.env.GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: prompt }] }],
+              systemInstruction: { parts: [{ text: systemPrompt }] },
+              generationConfig: { temperature: 0.7, maxOutputTokens: 4096, topP: 0.8, topK: 40 }
+            }),
+            signal: ac2.signal
+          });
+          clearTimeout(nonStreamTimeout);
+          if (retryResp.ok) {
+            const payload = await retryResp.json();
+            const text = (payload?.candidates?.[0]?.content?.parts || [])
+              .map((p: any) => p?.text || '')
+              .filter(Boolean)
+              .join('');
+            if (text && text.trim()) {
+              fullContent = text;
+              // Stream as one chunk to finish UX
+              this.broadcastToAll({ type: 'message_chunk', messageId: assistantMessage.id, chunk: text });
+            }
+          } else {
+            const errText = await retryResp.text().catch(() => '');
+            try {
+              console.error(JSON.stringify({ event: 'gemini_nonstream_http_error', ts: new Date().toISOString(), status: retryResp.status, body: errText.slice(0, 500) }));
+            } catch {}
+          }
+        } catch (e) {
+          try {
+            console.error(JSON.stringify({ event: 'gemini_nonstream_failed', ts: new Date().toISOString(), error: String(e).slice(0, 300) }));
+          } catch {}
+        }
+      }
+
+      // Update message with full content (from stream or retry)
       assistantMessage.content = fullContent;
 
       // Store complete message
       await this.storeMessage(assistantMessage);
+
+      // Structured server log for completion
+      try {
+        const ts = new Date().toISOString();
+        console.log(
+          JSON.stringify({
+            event: 'ai_message_complete',
+            ts,
+            sessionId: this.sessionId,
+            messageId: assistantMessage.id,
+            length: assistantMessage.content.length
+          })
+        );
+      } catch {}
 
       // Broadcast message completion
       this.broadcastToAll({
@@ -329,23 +494,44 @@ export class ChatDurableObject extends DurableObject {
       });
 
     } catch (error) {
-      console.error('Error generating AI response:', error);
-      
-      // Send error message
-      const errorMessage: ChatMessage = {
-        id: 'msg_' + crypto.randomUUID(),
-        sessionId: this.sessionId,
-        role: 'assistant',
-        content: 'I apologize, but I encountered an error while processing your request. Please try again.',
-        timestamp: new Date().toISOString()
-      };
+      console.error('Error generating AI response (Gemini path):', error);
 
-      await this.storeMessage(errorMessage);
-      
-      this.broadcastToAll({
-        type: 'message',
-        message: errorMessage
-      });
+      // If we already streamed some content, finalize this message with the partial content
+      if (fullContent && fullContent.trim().length > 0) {
+        try {
+          assistantMessage.content = fullContent;
+          await this.storeMessage(assistantMessage);
+          this.broadcastToAll({ type: 'message_complete', messageId: assistantMessage.id, message: assistantMessage });
+          return;
+        } catch (e) {
+          console.error('Failed to store partial content after Gemini error:', e);
+        }
+      }
+
+      // Otherwise, attempt Workers AI fallback using the SAME message ID so the UI doesn't get confused
+      try {
+        this.broadcastToAll({ type: 'ai_info', model: '@cf/meta/llama-3.1-8b-instruct', reason: 'gemini_error' });
+        const fallbackResult = await (this.env as any).AI.run('@cf/meta/llama-3.1-8b-instruct', { prompt: this.buildPrompt(query, context), max_tokens: 1024, temperature: 0.7 });
+        const fallbackText = (fallbackResult && (fallbackResult.response || fallbackResult.text || fallbackResult.output)) ? (fallbackResult.response || fallbackResult.text || fallbackResult.output) : 'I encountered an error, but here is a basic response.';
+
+        // Stream as single chunk and complete with the same messageId
+        this.broadcastToAll({ type: 'message_chunk', messageId: assistantMessage.id, chunk: fallbackText });
+        assistantMessage.content = fallbackText;
+        await this.storeMessage(assistantMessage);
+        this.broadcastToAll({ type: 'message_complete', messageId: assistantMessage.id, message: assistantMessage });
+        return;
+      } catch (fallbackError) {
+        console.error('Workers AI fallback also failed:', fallbackError);
+      }
+
+      // Fallback apology if all else fails
+      assistantMessage.content = 'I apologize, but I encountered an error while processing your request. Please try again.';
+      try {
+        await this.storeMessage(assistantMessage);
+      } catch (e) {
+        console.error('Failed to store error message:', e);
+      }
+      this.broadcastToAll({ type: 'message', message: assistantMessage });
     }
   }
 
@@ -386,20 +572,25 @@ Please provide your response:`;
       throw new Error('Database service not initialized');
     }
 
-    await this.dbService.query(
-      `INSERT INTO chat_messages (id, session_id, role, content, document_references, token_count, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        message.id,
-        message.sessionId,
-        message.role,
-        message.content,
-        message.documentReferences ? JSON.stringify(message.documentReferences) : null,
-        message.content.length, // Simple token approximation
-        message.timestamp,
-        message.timestamp
-      ]
-    );
+    try {
+      await this.dbService.execute(
+        `INSERT INTO chat_messages (id, session_id, role, content, document_references, token_count, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          message.id,
+          message.sessionId,
+          message.role,
+          message.content,
+          message.documentReferences ? JSON.stringify(message.documentReferences) : null,
+          message.content.length,
+          message.timestamp,
+          message.timestamp
+        ]
+      );
+    } catch (e) {
+      console.error('[ChatDO] storeMessage failed:', e);
+      throw e;
+    }
   }
 
   /**
@@ -429,7 +620,7 @@ Please provide your response:`;
         updatedAt: now
       };
 
-      await this.dbService.query(
+      await this.dbService.execute(
         `INSERT INTO chat_sessions (id, user_id, course_id, assignment_id, title, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -483,6 +674,31 @@ Please provide your response:`;
   private async initializeServices() {
     if (!this.dbService) {
       this.dbService = new DatabaseService(this.env.DB);
+      // Lazily ensure required tables exist (defensive)
+      await this.dbService.execute(`
+        CREATE TABLE IF NOT EXISTS chat_sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          course_id TEXT,
+          assignment_id TEXT,
+          title TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+      `);
+      await this.dbService.execute(`
+        CREATE TABLE IF NOT EXISTS chat_messages (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          role TEXT NOT NULL CHECK (role IN ('user','assistant')),
+          content TEXT NOT NULL,
+          document_references TEXT,
+          token_count INTEGER,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+        );
+      `);
     }
     if (!this.searchService) {
       // Create VectorService with Cloudflare AI binding

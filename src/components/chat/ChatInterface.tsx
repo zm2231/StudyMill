@@ -10,27 +10,31 @@ import {
   ScrollArea,
   Text,
   Group,
-  Avatar,
   Loader,
   Badge,
   Button,
   Divider,
-  Select
+  Select,
+  Box,
+  Center
 } from '@mantine/core';
 import {
   IconSend,
-  IconUser,
   IconRobot,
   IconClearAll,
   IconMessageCircle,
-  IconFilter
+  IconFilter,
+  IconHistory
 } from '@tabler/icons-react';
-import { Message } from '@/types/chat';
 import { ChatMessage } from './ChatMessage';
 import { TypingIndicator } from './TypingIndicator';
 import { useAuth } from '@/hooks/useAuth';
 import { useWebSocketChat } from '@/hooks/useWebSocketChat';
 import { apiClient } from '@/lib/api';
+import { Drawer } from '@mantine/core';
+import { ChatHistoryPanel } from './ChatHistoryPanel';
+import { useLayout } from '@/components/layout/LayoutContext';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { notifications } from '@mantine/notifications';
 
 interface ChatInterfaceProps {
@@ -54,6 +58,13 @@ export function ChatInterface({
   courseId
 }: ChatInterfaceProps) {
   const { user } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlSessionId = searchParams?.get('s') || undefined;
+  const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(sessionId || urlSessionId);
+  const { sidebarCollapsed, setSidebarCollapsed, contextPanelOpen, setContextPanelOpen } = useLayout();
+  const [historyOpen, setHistoryOpen] = useState(false);
+
   const [inputValue, setInputValue] = useState('');
   const [selectedScope, setSelectedScope] = useState<string>('all');
   const [availableScopes, setAvailableScopes] = useState<ChatScope[]>([
@@ -69,11 +80,17 @@ export function ChatInterface({
     streamingMessage,
     sendMessage,
     sendTyping,
-    clearMessages
+    clearMessages,
+    lastError,
+    readyState,
+    connectionAttempts,
+    replaceMessages,
+    sessionId: activeSessionId
   } = useWebSocketChat({
-    sessionId,
+    sessionId: currentSessionId,
     courseId,
     scope: selectedScope,
+    userId: user?.id,
     onError: (error) => {
       console.error('Chat error:', error);
     }
@@ -81,6 +98,35 @@ export function ChatInterface({
 
   const isLoading = isConnecting || !isConnected;
   const isTyping = !!streamingMessage;
+
+  // Collapse sidebars when history opens
+  useEffect(() => {
+    if (historyOpen) {
+      if (!sidebarCollapsed) setSidebarCollapsed(true);
+      if (contextPanelOpen) setContextPanelOpen(false);
+    }
+  }, [historyOpen, sidebarCollapsed, contextPanelOpen, setSidebarCollapsed, setContextPanelOpen]);
+
+  // Temporary toast for model info events
+  useEffect(() => {
+    const handler = (e: any) => {
+      const { model, reason } = e.detail || {};
+      notifications.show({
+        title: 'StudyMill AI Model',
+        message: reason ? `${model} (${reason})` : String(model || 'unknown'),
+        color: 'green',
+        autoClose: 2000
+      });
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('studymill-ai-info', handler);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('studymill-ai-info', handler);
+      }
+    };
+  }, []);
 
   // Load available courses and assignments for scope selector
   useEffect(() => {
@@ -118,7 +164,10 @@ export function ChatInterface({
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (scrollAreaRef.current) {
-      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+      requestAnimationFrame(() => {
+        const el = scrollAreaRef.current!;
+        el.scrollTop = el.scrollHeight + 1000;
+      });
     }
   }, [messages, streamingMessage]);
 
@@ -128,6 +177,30 @@ export function ChatInterface({
       inputRef.current.focus();
     }
   }, []);
+
+  // Load existing session messages on initial mount or session change (if none loaded yet)
+  useEffect(() => {
+    const loadInitial = async () => {
+      if (!currentSessionId) return;
+      if (messages.length > 0) return;
+      try {
+        const res = await apiClient.getChatMessages(currentSessionId, { limit: 200 });
+        if (res.success) {
+          const msgs = res.messages.map((m) => ({
+            id: m.id,
+            content: m.content,
+            role: m.role,
+            timestamp: new Date(m.timestamp),
+            status: 'delivered' as const,
+          }));
+          replaceMessages(msgs);
+        }
+      } catch (e) {
+        console.warn('Unable to load initial chat messages', e);
+      }
+    };
+    loadInitial();
+  }, [currentSessionId]);
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
@@ -152,6 +225,52 @@ export function ChatInterface({
 
   const clearChat = () => {
     clearMessages();
+  };
+
+  const openHistory = () => setHistoryOpen(true);
+  const closeHistory = () => setHistoryOpen(false);
+
+  const createNewChat = async () => {
+    try {
+      const res = await apiClient.createChatSession({ title: 'New chat' });
+      if (res.success) {
+        const newId = res.session.id;
+        setCurrentSessionId(newId);
+        // Update URL query param without navigation
+        const params = new URLSearchParams(searchParams?.toString());
+        params.set('s', newId);
+        router.replace(`?${params.toString()}`);
+        closeHistory();
+        clearMessages();
+      }
+    } catch (e) {
+      console.error('Failed to create chat session', e);
+    }
+  };
+
+  const selectSession = async (sid: string) => {
+    try {
+      setCurrentSessionId(sid);
+      const params = new URLSearchParams(searchParams?.toString());
+      params.set('s', sid);
+      router.replace(`?${params.toString()}`);
+      // Load messages for the session
+      const res = await apiClient.getChatMessages(sid, { limit: 200 });
+      if (res.success) {
+        const msgs = res.messages.map((m) => ({
+          id: m.id,
+          content: m.content,
+          role: m.role,
+          timestamp: new Date(m.timestamp),
+          status: 'delivered' as const,
+        }));
+        replaceMessages(msgs);
+      }
+    } catch (e) {
+      console.error('Failed to load chat history', e);
+    } finally {
+      closeHistory();
+    }
   };
 
   // Message action handlers
@@ -266,6 +385,7 @@ export function ChatInterface({
               >
                 {isConnecting ? 'Connecting...' : isConnected ? 'Connected' : 'Disconnected'}
               </Badge>
+              <Text size="xs" c="dimmed">Session: {activeSessionId?.slice(0, 18) || '—'}</Text>
             </Group>
             
             {/* Scope Selector and Actions */}
@@ -275,7 +395,7 @@ export function ChatInterface({
                 onChange={(value) => setSelectedScope(value || 'all')}
                 data={availableScopes.map(scope => ({ value: scope.value, label: scope.label }))}
                 leftSection={<IconFilter size={16} />}
-                placeholder="Select scope"
+                placeholder={isConnecting ? 'Connecting…' : 'Select scope'}
                 w={220}
                 size="sm"
                 styles={{
@@ -285,6 +405,19 @@ export function ChatInterface({
                   }
                 }}
               />
+              <Button
+                leftSection={<IconHistory size={16} />}
+                variant="outline"
+                size="sm"
+                onClick={openHistory}
+              >
+                History
+              </Button>
+              {!isConnected && (
+                <Text size="xs" c="dimmed">
+                  WS: {isConnecting ? 'connecting' : 'disconnected'} • attempts: {connectionAttempts} • readyState: {String(readyState)} {lastError ? `• ${lastError}` : ''}
+                </Text>
+              )}
               
               <Button
                 leftSection={<IconClearAll size={16} />}
@@ -338,24 +471,13 @@ export function ChatInterface({
           >
             <Stack gap="md">
               {messages.length === 0 ? (
-                <Stack gap="lg" align="center" justify="center" h="200px">
-                  <IconRobot 
-                    size={48}
-                    style={{ color: 'var(--forest-green-primary)' }}
-                  />
-                  <Stack gap="xs" align="center">
-                    <Text 
-                      fw={500}
-                      style={{ color: 'var(--sanctuary-text-primary)' }}
-                    >
-                      Welcome to your AI Study Assistant!
-                    </Text>
+                <Center style={{ width: '100%' }}>
+                  <Box p="lg" style={{ border: '1px dashed var(--border-light)', background: 'var(--sanctuary-card)', borderRadius: 12, width: '100%' }}>
                     <Text size="sm" c="dimmed" ta="center">
-                      Ask me anything about your coursework, assignments, or study materials.
-                      I&apos;m here to help with explanations, questions, and study guidance.
+                      No messages yet — ask a question to get started.
                     </Text>
-                  </Stack>
-                </Stack>
+                  </Box>
+                </Center>
               ) : (
                 <>
                   {messages.map((message) => (
@@ -433,6 +555,35 @@ export function ChatInterface({
           </Text>
         </Paper>
       </Stack>
+
+      {/* History Drawer */}
+      <Drawer
+        opened={historyOpen}
+        onClose={closeHistory}
+        position="left"
+        size={360}
+        overlayProps={{ opacity: 0.2 }}
+        withCloseButton={false}
+        styles={{
+          content: {
+            backgroundColor: 'var(--sanctuary-card)',
+            borderRight: '1px solid var(--border-light)',
+          },
+          body: {
+            padding: '16px',
+            height: '100%'
+          },
+          header: {
+            display: 'none'
+          }
+        }}
+      >
+        <ChatHistoryPanel
+          onSelectSession={selectSession}
+          onCreateNew={createNewChat}
+          activeSessionId={currentSessionId}
+        />
+      </Drawer>
     </Container>
   );
 }

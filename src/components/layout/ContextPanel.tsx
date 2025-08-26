@@ -47,13 +47,11 @@ interface ContextPanelTab {
 }
 
 // Phase 1 Context Panel Tabs as per component specifications
+// Use compact chat UI for the narrow right sidebar
+import { ChatCompact } from '@/components/chat/ChatCompact';
 const ChatTabContent = () => (
   <Stack gap="md">
-    <Text size="sm" c="dimmed">Start a conversation about this content</Text>
-    {/* TODO: Integrate with chat interface */}
-    <Card p="md" withBorder>
-      <Text size="sm">Chat interface will be integrated here</Text>
-    </Card>
+    <ChatCompact />
   </Stack>
 );
 
@@ -163,7 +161,6 @@ const QuickActionsTabContent = ({ contextId, contextType }: { contextId?: string
 
   return (
     <Stack gap="md">
-      <Text size="sm" c="dimmed">Quick actions for this content</Text>
       <Stack gap="sm">
         <Button
           fullWidth
@@ -174,6 +171,7 @@ const QuickActionsTabContent = ({ contextId, contextType }: { contextId?: string
           loading={loadingStates.summarize}
           disabled={!contextId || contextType !== 'document'}
           onClick={() => handleAction('summarize')}
+          style={{ position: 'relative', zIndex: 1 }}
         >
           Summarize
         </Button>
@@ -186,6 +184,7 @@ const QuickActionsTabContent = ({ contextId, contextType }: { contextId?: string
           loading={loadingStates['study-guide']}
           disabled={!contextId || contextType !== 'document'}
           onClick={() => handleAction('study-guide')}
+          style={{ position: 'relative', zIndex: 1 }}
         >
           Generate Study Guide
         </Button>
@@ -198,6 +197,7 @@ const QuickActionsTabContent = ({ contextId, contextType }: { contextId?: string
           loading={loadingStates.flashcards}
           disabled={!contextId || contextType !== 'document'}
           onClick={() => handleAction('flashcards')}
+          style={{ position: 'relative', zIndex: 1 }}
         >
           Create Flashcards
         </Button>
@@ -276,19 +276,21 @@ export function ContextPanel({
       icon: IconMessageCircle,
       content: content || <ChatTabContent />,
     },
-    {
-      id: 'suggestions',
-      label: 'Suggestions',
-      icon: IconBulb,
-      content: <SuggestionsTabContent />,
-      badge: 3
-    },
-    {
+    // Suggestions temporarily hidden for compact sidebar
+    // {
+    //   id: 'suggestions',
+    //   label: 'Suggestions',
+    //   icon: IconBulb,
+    //   content: <SuggestionsTabContent />,
+    //   badge: 3
+    // },
+    // Related temporarily hidden for compact sidebar
+    ...(false ? [{
       id: 'related',
       label: 'Related',
       icon: IconLink,
       content: <RelatedTabContent />,
-    },
+    } as ContextPanelTab] : []),
     {
       id: 'actions',
       label: 'Quick Actions',

@@ -29,12 +29,15 @@ import {
   IconUser,
   IconLogout,
   IconMicrophone,
-  IconClock
+  IconClock,
+  IconMessageCircle,
+  IconReportAnalytics
 } from '@tabler/icons-react';
 import { TimerMini } from '@/components/timer/TimerMini';
 import { useTimerContext } from '@/contexts/TimerContext';
 import { usePersistentAudio } from '@/contexts/PersistentAudioContext';
 import { AudioRecordingMini } from '@/components/audio/AudioRecordingMini';
+import { useAuth } from '@/hooks/useAuth';
 
 interface SidebarNavigationProps {
   collapsed: boolean;
@@ -81,18 +84,34 @@ const navigationHubs: NavigationHub[] = [
     description: 'Schedule & deadlines'
   },
   {
+    id: 'chat',
+    label: 'AI Chat',
+    icon: IconMessageCircle,
+    href: '/chat',
+    description: 'Ask Study Assistant'
+  },
+  {
+    id: 'grades',
+    label: 'Grades',
+    icon: IconReportAnalytics,
+    href: '/grades',
+    description: 'Track performance'
+  },
+  {
     id: 'study',
     label: 'Study',
     icon: IconBrain,
     href: '/study',
-    description: 'Flashcards & review'
+    description: 'Flashcards & review',
+    badge: 'WIP'
   },
   {
     id: 'analytics',
     label: 'Analytics',
     icon: IconChartBar,
     href: '/analytics',
-    description: 'Progress tracking'
+    description: 'Progress tracking',
+    badge: 'WIP'
   }
 ];
 
@@ -136,6 +155,7 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const { openFullTimer } = useTimerContext();
   const { openRecorder } = usePersistentAudio();
+  const { logout } = useAuth();
   const { openUpload, UploadModal } = useUpload({
     onUploadComplete: (documentIds) => {
       // Navigate to library to show uploaded documents
@@ -190,14 +210,14 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
         <Button
           onClick={() => setQuickAddOpen(true)}
           fullWidth={!collapsed}
-          leftSection={<IconPlus size={20} />}
+          leftSection={!collapsed ? <IconPlus size={20} /> : undefined}
           variant="filled"
           color="forestGreen"
           size="md"
           justify={collapsed ? 'center' : 'start'}
           px={collapsed ? 'sm' : 'md'}
         >
-          Quick Add
+          {collapsed ? <IconPlus size={20} /> : 'Quick Add'}
         </Button>
 
         <Divider />
@@ -209,9 +229,10 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
             const isActive = pathname === hub.href || pathname.startsWith(hub.href + '/');
             
             const navItem = (
-              <Button
+<Button
                 component={Link}
                 href={hub.href}
+                prefetch={false}
                 key={hub.id}
                 variant={isActive ? 'light' : 'subtle'}
                 color={isActive ? 'forestGreen' : 'gray'}
@@ -244,10 +265,12 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
                 }}
               >
                 {collapsed ? (
-                  <Icon 
-                    size={22} 
-                    color={isActive ? 'var(--forest-green-primary)' : 'var(--sanctuary-text-secondary)'} 
-                  />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+                    <Icon 
+                      size={22} 
+                      color={isActive ? 'var(--forest-green-primary)' : 'var(--sanctuary-text-secondary)'} 
+                    />
+                  </div>
                 ) : (
                   <Stack gap={2} align="flex-start">
                     <Text size="sm" fw={isActive ? 600 : 500}>
@@ -288,12 +311,12 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
               variant="subtle"
               color="gray"
               fullWidth={!collapsed}
-              leftSection={<IconUser size={20} color={'var(--sanctuary-text-secondary)'} />}
+              leftSection={!collapsed ? <IconUser size={20} color={'var(--sanctuary-text-secondary)'} /> : undefined}
               justify={collapsed ? 'center' : 'start'}
               size="sm"
               px={collapsed ? 'xs' : 'md'}
             >
-              Profile
+              {collapsed ? <IconUser size={20} color={'var(--sanctuary-text-secondary)'} /> : 'Profile'}
             </Button>
           </Tooltip>
 
@@ -306,12 +329,12 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
               variant="subtle"
               color="gray"
               fullWidth={!collapsed}
-              leftSection={<IconSettings size={20} color={'var(--sanctuary-text-secondary)'} />}
+              leftSection={!collapsed ? <IconSettings size={20} color={'var(--sanctuary-text-secondary)'} /> : undefined}
               justify={collapsed ? 'center' : 'start'}
               size="sm"
               px={collapsed ? 'xs' : 'md'}
             >
-              Settings
+              {collapsed ? <IconSettings size={20} color={'var(--sanctuary-text-secondary)'} /> : 'Settings'}
             </Button>
           </Tooltip>
 
@@ -321,16 +344,19 @@ export function SidebarNavigation({ collapsed, onCollapse }: SidebarNavigationPr
               variant="subtle"
               color="red"
               fullWidth={!collapsed}
-              leftSection={<IconLogout size={20} color={'var(--muted-terracotta)'} />}
+              leftSection={!collapsed ? <IconLogout size={20} color={'var(--muted-terracotta)'} /> : undefined}
               justify={collapsed ? 'center' : 'start'}
               size="sm"
               px={collapsed ? 'xs' : 'md'}
-              onClick={() => {
-                // TODO: Implement sign out
-                console.log('Sign out clicked');
+onClick={async () => {
+                try {
+                  await logout();
+                } finally {
+                  router.push('/auth/login');
+                }
               }}
             >
-              Sign Out
+              {collapsed ? <IconLogout size={20} color={'var(--muted-terracotta)'} /> : 'Sign Out'}
             </Button>
           </Tooltip>
         </Stack>

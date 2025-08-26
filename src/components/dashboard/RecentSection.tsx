@@ -147,13 +147,7 @@ export function RecentSection() {
             </Button>
           </Stack>
         ) : recentActivities.length === 0 ? (
-          <Stack align="center" py="xl">
-            <Text size="lg" c="dimmed">Ready to start studying?</Text>
-            <Text size="sm" c="dimmed" ta="center">
-              Upload documents, record lectures, or create notes to get started.<br />
-              Your activity will appear here as you use StudyMill!
-            </Text>
-          </Stack>
+          null
         ) : (
           <Stack gap="sm">
             {recentActivities.slice(0, 5).map((activity) => {

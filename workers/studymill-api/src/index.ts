@@ -106,6 +106,30 @@ async function checkDatabaseHealth(db: D1Database): Promise<boolean> {
   }
 }
 
+// Backward-compat redirect for legacy chat paths (avoid 404s)
+app.use('/chat/*', async (c, next) => {
+  // Preserve query string
+  const url = new URL(c.req.url);
+  const redirected = `/api/v1${url.pathname}${url.search}`;
+
+  // Structured server log for visibility
+  try {
+    const ts = new Date().toISOString();
+    const sessionId = url.searchParams.get('sessionId');
+    console.log(
+      JSON.stringify({
+        event: 'legacy_chat_redirect',
+        ts,
+        path: url.pathname,
+        redirected,
+        sessionId: sessionId || null
+      })
+    );
+  } catch {}
+
+  return c.redirect(redirected, 308);
+});
+
 // API routes
 app.route('/auth', authRoutes);
 app.route('/api/v1', apiRoutes);

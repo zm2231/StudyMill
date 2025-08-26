@@ -91,7 +91,7 @@ export function ChatMessage({
       </Avatar>
 
       {/* Message Content */}
-      <Stack gap="xs" style={{ maxWidth: '70%', minWidth: '200px' }}>
+      <Stack gap="xs" style={{ maxWidth: '85%', minWidth: '200px' }}>
         {/* Message Bubble */}
         <Paper
           p="sm"

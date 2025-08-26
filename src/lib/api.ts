@@ -67,12 +67,17 @@ export interface Note {
 }
 
 class ApiClient {
+  // Flashcards types
+  public static FlashcardDifficulty = ['easy','medium','hard'] as const;
+  public static ReviewRating = [1,2,3,4] as const;
+  
+  
   private baseUrl: string;
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
 
   constructor() {
-    // Use environment variable for API URL, fallback to localhost for development
+    // Use environment variable for API URL, fallback to production if not set
     this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'https://studymill-api-production.merchantzains.workers.dev';
     
     // Load tokens from localStorage on initialization
@@ -1114,6 +1119,88 @@ class ApiClient {
     return response;
   }
 
+  // Flashcards SDK
+  async getDecks(params?: { courseId?: string; assignmentId?: string; weekId?: string; query?: string }) {
+    const q = new URLSearchParams();
+    if (params?.courseId) q.set('courseId', params.courseId);
+    if (params?.assignmentId) q.set('assignmentId', params.assignmentId);
+    if (params?.weekId) q.set('weekId', params.weekId);
+    if (params?.query) q.set('query', params.query);
+    const qs = q.toString();
+    return this.request<{ success: boolean; decks: Array<{
+      id: string; name: string; description?: string | null; courseId: string; assignmentId?: string | null; weekId?: string | null; sourceType: string; totalCards: number; dueNow: number; createdAt: string; updatedAt: string;
+    }> }>(`/api/v1/flashcards/decks${qs ? `?${qs}` : ''}`);
+  }
+
+  async getDeck(id: string, opts?: { limit?: number; offset?: number }) {
+    const q = new URLSearchParams();
+    if (opts?.limit) q.set('limit', String(opts.limit));
+    if (opts?.offset) q.set('offset', String(opts.offset));
+    const qs = q.toString();
+    return this.request<{ success: boolean; deck: any; items: any[]; pagination: any }>(`/api/v1/flashcards/decks/${id}${qs ? `?${qs}` : ''}`);
+  }
+
+  async getFlashcards(params?: { courseId?: string; deckId?: string; assignmentId?: string; weekId?: string; tags?: string[]; query?: string; limit?: number; offset?: number }) {
+    const q = new URLSearchParams();
+    if (params?.courseId) q.set('courseId', params.courseId);
+    if (params?.deckId) q.set('deckId', params.deckId);
+    if (params?.assignmentId) q.set('assignmentId', params.assignmentId);
+    if (params?.weekId) q.set('weekId', params.weekId);
+    if (params?.tags?.length) q.set('tags', params.tags.join(','));
+    if (params?.query) q.set('query', params.query);
+    if (params?.limit) q.set('limit', String(params.limit));
+    if (params?.offset) q.set('offset', String(params.offset));
+    const qs = q.toString();
+    return this.request<{ success: boolean; items: any[]; pagination: any }>(`/api/v1/flashcards${qs ? `?${qs}` : ''}`);
+  }
+
+  async getFlashcardStats(params?: { courseId?: string; deckId?: string }) {
+    const q = new URLSearchParams();
+    if (params?.courseId) q.set('courseId', params.courseId);
+    if (params?.deckId) q.set('deckId', params.deckId);
+    const qs = q.toString();
+    return this.request<{ success: boolean; stats: { total: number; dueNow: number; newToday: number; reviewedToday: number } }>(`/api/v1/flashcards/stats${qs ? `?${qs}` : ''}`);
+  }
+
+  async createDeck(data: { courseId: string; name: string; description?: string; assignmentId?: string; weekId?: string; sourceType?: 'lecture' | 'week' | 'test' | 'custom'; metadata?: Record<string, unknown> }) {
+    // leverage import endpoint with empty cards to create deck only for now
+    const res = await this.importFlashcards({ courseId: data.courseId, deck: { name: data.name, description: data.description, assignmentId: data.assignmentId, weekId: data.weekId, sourceType: data.sourceType, metadata: data.metadata }, cards: [] });
+    return res;
+  }
+
+  async createFlashcard(data: { courseId: string; deckId?: string; front: string; back: string; tags?: string[] }) {
+    return this.request<{ success: boolean; id: string }>(`/api/v1/flashcards`, { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async importFlashcards(data: { courseId: string; deckId?: string; deck?: { name: string; description?: string; assignmentId?: string; weekId?: string; sourceType?: string; metadata?: Record<string, unknown> }; cards?: Array<{ front: string; back: string; tags?: string[] }>; text?: string; parseOptions?: { delimiter?: string } }) {
+    return this.request<{ success: boolean; deckId?: string; createdCount: number; ids: string[] }>(`/api/v1/flashcards/import`, { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async generateDeck(params: { courseId: string; documentIds?: string[]; assignmentId?: string; weekId?: string; deckName?: string; highlightPrompt?: string; useSyllabusData?: boolean; extraInfo?: string; count?: number; difficulty?: 'easy' | 'medium' | 'hard' }) {
+    return this.request<{ success: boolean; deckId: string }>(`/api/v1/flashcards/generate`, { method: 'POST', body: JSON.stringify(params) });
+  }
+
+  async getDueFlashcards(params?: { courseId?: string; deckId?: string; limit?: number }) {
+    const q = new URLSearchParams();
+    if (params?.courseId) q.set('courseId', params.courseId);
+    if (params?.deckId) q.set('deckId', params.deckId);
+    if (params?.limit) q.set('limit', String(params.limit));
+    const qs = q.toString();
+    return this.request<{ success: boolean; items: any[] }>(`/api/v1/flashcards/due${qs ? `?${qs}` : ''}`);
+  }
+
+  async reviewFlashcard(id: string, rating: 1 | 2 | 3 | 4) {
+    return this.request<{ success: boolean; nextReview: string }>(`/api/v1/flashcards/${id}/review`, { method: 'PUT', body: JSON.stringify({ rating }) });
+  }
+
+  async updateFlashcard(id: string, updates: { front?: string; back?: string; tags?: string[] }) {
+    return this.request<{ success: boolean }>(`/api/v1/flashcards/${id}`, { method: 'PUT', body: JSON.stringify(updates) });
+  }
+
+  async deleteFlashcard(id: string) {
+    return this.request<{ success: boolean }>(`/api/v1/flashcards/${id}`, { method: 'DELETE' });
+  }
+
   // CANONICAL UPLOAD API - Standardized document upload with SSE progress
   async uploadDocument(formData: FormData, options: { 
     strategy?: 'multipart' | 'presigned';
@@ -1426,7 +1513,7 @@ class ApiClient {
         createdAt: string;
         updatedAt: string;
       }>;
-    }>('/chat/sessions');
+    }>('/api/v1/chat/sessions');
   }
 
   async createChatSession(data: {
@@ -1445,7 +1532,7 @@ class ApiClient {
         createdAt: string;
         updatedAt: string;
       };
-    }>('/chat/sessions', {
+    }>('/api/v1/chat/sessions', {
       method: 'POST',
       body: JSON.stringify(data)
     });
@@ -1460,7 +1547,7 @@ class ApiClient {
     if (options.offset) params.append('offset', options.offset.toString());
     
     const queryString = params.toString();
-    const url = queryString ? `/chat/sessions/${sessionId}/messages?${queryString}` : `/chat/sessions/${sessionId}/messages`;
+    const url = queryString ? `/api/v1/chat/sessions/${sessionId}/messages?${queryString}` : `/api/v1/chat/sessions/${sessionId}/messages`;
     
     return this.request<{
       success: boolean;
@@ -1495,7 +1582,7 @@ class ApiClient {
         content: string;
         timestamp: string;
       };
-    }>(`/chat/sessions/${sessionId}/messages`, {
+    }>(`/api/v1/chat/sessions/${sessionId}/messages`, {
       method: 'POST',
       body: JSON.stringify({ content, courseId })
     });
@@ -1515,7 +1602,7 @@ class ApiClient {
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${this.baseURL.replace(/^https?:\/\//, '')}/chat/ws?sessionId=${sessionId}`;
+    const wsUrl = `${protocol}//${this.baseUrl.replace(/^https?:\/\//, '')}/api/v1/chat/ws?sessionId=${sessionId}`;
     
     try {
       const ws = new WebSocket(wsUrl, [], {

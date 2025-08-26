@@ -34,6 +34,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
+import { CommandPalette } from '@/components/search/CommandPalette';
 
 interface TopBarComponentProps {
   onMenuClick: () => void;
@@ -99,10 +100,12 @@ export function TopBarComponent({
   const breadcrumbs = generateBreadcrumbs(pathname);
 
   // Global search hotkey
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [commandInitialQuery, setCommandInitialQuery] = useState<string>('');
   useHotkeys('cmd+k,ctrl+k', (e) => {
     e.preventDefault();
-    // TODO: Open command palette
-    console.log('Open command palette');
+    setCommandInitialQuery('');
+    setCommandPaletteOpen(true);
   });
 
   // Focus search hotkey
@@ -132,6 +135,7 @@ export function TopBarComponent({
   });
 
   return (
+    <>
     <Group h="100%" px="md" justify="space-between">
       {/* Left Section: Menu + Breadcrumbs */}
       <Group gap="md">
@@ -167,6 +171,7 @@ export function TopBarComponent({
                 key={item.title}
                 component={Link}
                 href={item.href || '#'}
+                prefetch={false}
                 size="sm"
                 c="var(--sanctuary-text-secondary)"
                 style={{ textDecoration: 'none' }}
@@ -192,6 +197,12 @@ export function TopBarComponent({
         }
         value={searchValue}
         onChange={(e) => setSearchValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            setCommandInitialQuery(searchValue.trim());
+            setCommandPaletteOpen(true);
+          }
+        }}
         size="sm"
         w={320}
         styles={{
@@ -220,7 +231,9 @@ export function TopBarComponent({
           <ActionIcon
             variant={contextPanelOpen ? 'filled' : 'subtle'}
             color={contextPanelOpen ? 'forestGreen' : 'gray'}
-            onClick={onContextPanelToggle}
+            onClick={() => {
+              onContextPanelToggle();
+            }}
             size="md"
           >
             <IconLayoutSidebarRightExpand size={20} />
@@ -228,11 +241,46 @@ export function TopBarComponent({
         </Tooltip>
 
         {/* Notifications */}
-        <Tooltip label="Notifications">
+        <Tooltip label="Notifications / Test alert">
           <ActionIcon
             variant="subtle"
             color="gray"
             size="md"
+            onClick={async () => {
+              try {
+                if ('Notification' in window && Notification.permission === 'default') {
+                  await Notification.requestPermission();
+                }
+              } catch {}
+              try {
+                // Lazily import store to avoid SSR issues
+                const { useFocusTimerStore } = await import('@/store/useFocusTimerStore');
+                const state = useFocusTimerStore.getState() as any;
+                if (state && typeof state.initializeWorker === 'function') {
+                  // ensure worker exists
+                  state.initializeWorker();
+                }
+                // best-effort play a short tone using Web Audio API as a fallback
+                if (typeof window !== 'undefined' && (window as any).AudioContext) {
+                  const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+                  const ctx = new AudioContextClass();
+                  const osc = ctx.createOscillator();
+                  const gain = ctx.createGain();
+                  osc.connect(gain);
+                  gain.connect(ctx.destination);
+                  osc.type = 'sine';
+                  osc.frequency.setValueAtTime(880, ctx.currentTime);
+                  gain.gain.setValueAtTime(0.2, ctx.currentTime);
+                  osc.start();
+                  osc.stop(ctx.currentTime + 0.25);
+                }
+                if ('Notification' in window && Notification.permission === 'granted') {
+                  new Notification('StudyMill', { body: 'Alert test' });
+                }
+              } catch (e) {
+                console.warn('Alert test failed', e);
+              }
+            }}
           >
             <IconBell size={20} />
           </ActionIcon>
@@ -304,6 +352,8 @@ export function TopBarComponent({
         </Menu>
       </Group>
     </Group>
+    <CommandPalette opened={commandPaletteOpen} initialQuery={commandInitialQuery} onClose={() => setCommandPaletteOpen(false)} />
+    </>
   );
 }
 

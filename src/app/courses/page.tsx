@@ -29,7 +29,8 @@ import {
   IconDots,
   IconRestore,
   IconCalendar,
-  IconSearch
+  IconSearch,
+  IconReportAnalytics
 } from '@tabler/icons-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -453,6 +454,12 @@ export default function CoursesPage() {
                                   }}
                                 >
                                   Edit
+                                </Menu.Item>
+                                <Menu.Item
+                                  leftSection={<IconReportAnalytics size={14} />}
+                                  onClick={() => router.push(`/grades?courseId=${course.id}`)}
+                                >
+                                  View Grades
                                 </Menu.Item>
                                 <Menu.Divider />
                                 {course.archived ? (

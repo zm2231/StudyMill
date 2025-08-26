@@ -114,13 +114,7 @@ export function ResumeSection() {
             </Button>
           </Stack>
         ) : recentItems.length === 0 ? (
-          <Stack align="center" py="xl">
-            <Text size="lg" c="dimmed">Nothing to resume yet</Text>
-            <Text size="sm" c="dimmed" ta="center">
-              Open documents, take notes, or study materials.<br />
-              Your recent progress will appear here!
-            </Text>
-          </Stack>
+          null
         ) : (
           <Stack gap="sm">
             {recentItems.map((item) => {

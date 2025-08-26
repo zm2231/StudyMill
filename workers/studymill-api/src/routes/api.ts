@@ -10,6 +10,7 @@ import { SemanticSearchService } from '../services/semanticSearch';
 import { createAudioProcessor, AudioProcessor } from '../services/audioProcessor';
 import { EnhancedMemoryService } from '../services/enhancedMemory';
 import { AssignmentService } from '../services/assignment';
+import type { FSRSState } from '../services/fsrs';
 import { ActivityService } from '../services/activity';
 import { ContextSynthesisService } from '../services/contextSynthesis';
 import { QueryProcessorService } from '../services/queryProcessor';
@@ -19,6 +20,7 @@ import plannerRoutes from './planner';
 import { semestersRouter } from './semesters';
 import { tagsRouter } from './tags';
 import { syllabusRouter } from './ingest/syllabus';
+import { gradesRouter } from './grades';
 
 export const apiRoutes = new Hono();
 
@@ -1147,6 +1149,19 @@ chatRoutes.get('/ws', async (c) => {
 
   // Get session ID from query params
   const sessionId = c.req.query('sessionId') || crypto.randomUUID();
+
+  // Structured server log for WS upgrade
+  try {
+    const ts = new Date().toISOString();
+    console.log(
+      JSON.stringify({
+        event: 'chat_ws_upgrade',
+        ts,
+        path: c.req.path,
+        sessionId
+      })
+    );
+  } catch {}
   
   // Get Durable Object instance for this session
   const durableObjectId = c.env.CHAT_DO.idFromName(sessionId);
@@ -2452,53 +2467,495 @@ audioRoutes.get('/:id/topic/:topic', async (c) => {
 // Flashcards routes
 const flashcardsRoutes = new Hono();
 
+// List flashcards (with filters and pagination)
 flashcardsRoutes.get('/', async (c) => {
+  const userId = c.get('userId');
+  const dbService = new DatabaseService(c.env.DB);
+
   const courseId = c.req.query('courseId');
-  
-  // TODO: Get flashcards from D1
+  const deckId = c.req.query('deckId');
+  const assignmentId = c.req.query('assignmentId');
+  const weekId = c.req.query('weekId');
+  const tags = c.req.query('tags')?.split(',').map(t => t.trim()).filter(Boolean) || [];
+  const query = c.req.query('query');
+  const limit = parseInt(c.req.query('limit') || '50');
+  const offset = parseInt(c.req.query('offset') || '0');
+
+  // Build WHERE clauses
+  const where: string[] = ['f.user_id = ?'];
+  const params: any[] = [userId];
+  if (courseId) { where.push('f.course_id = ?'); params.push(courseId); }
+  if (deckId) { where.push('f.deck_id = ?'); params.push(deckId); }
+  if (assignmentId) { where.push('d.assignment_id = ?'); params.push(assignmentId); }
+  if (weekId) { where.push('d.week_id = ?'); params.push(weekId); }
+  if (query) { where.push('(LOWER(f.front) LIKE ? OR LOWER(f.back) LIKE ?)'); params.push(`%${query.toLowerCase()}%`, `%${query.toLowerCase()}%`); }
+  if (tags.length > 0) {
+    // Simple JSON LIKE matching for tags
+    for (const tag of tags) { where.push("f.tags LIKE ?"); params.push(`%"${tag}"%`); }
+  }
+  const whereSql = where.join(' AND ');
+
+  const sql = `
+    SELECT f.*, d.name as deck_name, d.source_type as deck_source_type
+    FROM flashcards f
+    LEFT JOIN decks d ON f.deck_id = d.id
+    WHERE ${whereSql}
+    ORDER BY f.updated_at DESC
+    LIMIT ? OFFSET ?
+  `;
+  const qParams = [...params, limit, offset];
+  const cards = await dbService.query(sql, qParams);
+
+  const countSql = `SELECT COUNT(*) as total FROM flashcards f LEFT JOIN decks d ON f.deck_id = d.id WHERE ${whereSql}`;
+  const countRow = await dbService.queryFirst(countSql, params);
+  const total = (countRow as any)?.total || 0;
+
   return c.json({
-    message: 'Get flashcards endpoint - coming soon',
-    courseId,
-    flashcards: []
+    success: true,
+    items: cards.map((row: any) => ({
+      id: row.id,
+      courseId: row.course_id,
+      deckId: row.deck_id,
+      front: row.front,
+      back: row.back,
+      tags: row.tags ? JSON.parse(row.tags) : [],
+      fsrsState: row.fsrs_state ? JSON.parse(row.fsrs_state) : null,
+      stability: row.stability,
+      difficulty: row.difficulty,
+      nextReview: row.next_review,
+      reviewCount: row.review_count,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      deck: row.deck_id ? { id: row.deck_id, name: row.deck_name, sourceType: row.deck_source_type } : null
+    })),
+    pagination: { total, limit, offset, hasMore: total > offset + limit }
   });
 });
 
+// Create a single flashcard
 flashcardsRoutes.post('/', async (c) => {
-  try {
-    const { courseId, front, back, tags } = await c.req.json();
-    
-    if (!courseId || !front || !back) {
-      createError('Course ID, front, and back are required', 400);
-    }
+  const userId = c.get('userId');
+  const dbService = new DatabaseService(c.env.DB);
+  const { courseId, deckId, front, back, tags = [] } = await c.req.json();
 
-    // TODO: Create flashcard in D1 with FSRS state
-    return c.json({
-      message: 'Create flashcard endpoint - coming soon',
-      flashcard: { courseId, front, back, tags }
-    }, 201);
-  } catch (error) {
-    throw error;
+  if (!courseId || !front || !back) {
+    createError('Course ID, front, and back are required', 400);
   }
+
+  const id = 'card_' + crypto.randomUUID();
+  const now = new Date().toISOString();
+  const fsrsInitial = { stage: 'learning', stability: 0, difficulty: 0, reps: 0 };
+  await dbService.execute(`
+    INSERT INTO flashcards (id, course_id, user_id, deck_id, front, back, tags, fsrs_state, stability, difficulty, next_review, review_count, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+  `, [
+    id,
+    courseId,
+    userId,
+    deckId || null,
+    front,
+    back,
+    JSON.stringify(tags),
+    JSON.stringify(fsrsInitial),
+    0,
+    0,
+    now,
+    now,
+    now,
+  ]);
+
+  return c.json({ success: true, id }, 201);
 });
 
+// Import many flashcards (supports text or structured cards)
+flashcardsRoutes.post('/import', async (c) => {
+  const userId = c.get('userId');
+  const dbService = new DatabaseService(c.env.DB);
+  const body = await c.req.json();
+  const { courseId, deckId, deck, text, parseOptions, cards } = body;
+
+  if (!courseId) {
+    createError('courseId is required', 400);
+  }
+
+  // Create deck if needed
+  let effectiveDeckId = deckId || null;
+  if (!effectiveDeckId && deck?.name) {
+    effectiveDeckId = 'deck_' + crypto.randomUUID();
+    const now = new Date().toISOString();
+    await dbService.execute(`
+      INSERT INTO decks (id, user_id, course_id, assignment_id, week_id, name, description, source_type, metadata, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      effectiveDeckId,
+      userId,
+      courseId,
+      deck.assignmentId || null,
+      deck.weekId || null,
+      deck.name,
+      deck.description || null,
+      deck.sourceType || 'custom',
+      deck.metadata ? JSON.stringify(deck.metadata) : null,
+      now, now
+    ]);
+  }
+
+  // Parse input into cards array if text provided
+  let toCreate: Array<{ front: string; back: string; tags?: string[] }>; 
+  if (text && !cards) {
+    // Simple heuristics: try JSON, then TSV/CSV, then line patterns
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        toCreate = parsed.map((p: any) => Array.isArray(p) ? { front: String(p[0]||'').trim(), back: String(p[1]||'').trim() } : { front: String(p.front||'').trim(), back: String(p.back||'').trim(), tags: p.tags || [] })
+                         .filter(p => p.front && p.back);
+      } else {
+        toCreate = [];
+      }
+    } catch {
+      // Detect delimiter
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const delimiter = (parseOptions?.delimiter) || (lines[0]?.includes('\t') ? '\t' : lines[0]?.includes(',') ? ',' : null);
+      if (delimiter) {
+        toCreate = lines.map(l => {
+          const parts = delimiter === '\t' ? l.split('\t') : l.split(',');
+          const front = (parts[0]||'').trim();
+          const back = (parts[1]||'').trim();
+          return front && back ? { front, back } : null;
+        }).filter(Boolean) as any;
+      } else {
+        // Common pattern: term — definition, term - definition, term: definition
+        toCreate = [];
+        for (const l of lines) {
+          const m = l.split(/\s[—:-]\s|\t|\s-\s|:\s/);
+          if (m.length >= 2) {
+            const front = m[0].trim();
+            const back = m.slice(1).join(' - ').trim();
+            if (front && back) toCreate.push({ front, back });
+          }
+        }
+      }
+    }
+  } else {
+    toCreate = (cards || []).filter((c: any) => c.front && c.back);
+  }
+
+  if (!toCreate || toCreate.length === 0) {
+    return c.json({ success: false, error: 'No valid cards found to import' }, 400);
+  }
+
+  // Insert cards
+  const now = new Date().toISOString();
+  const createdIds: string[] = [];
+  for (const card of toCreate) {
+    const id = 'card_' + crypto.randomUUID();
+    const fsrsInitial = { stage: 'learning', stability: 0, difficulty: 0, reps: 0 };
+    await dbService.execute(`
+      INSERT INTO flashcards (id, course_id, user_id, deck_id, front, back, tags, fsrs_state, stability, difficulty, next_review, review_count, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, ?, ?)
+    `, [
+      id,
+      courseId,
+      userId,
+      effectiveDeckId,
+      card.front,
+      card.back,
+      JSON.stringify(card.tags || []),
+      JSON.stringify(fsrsInitial),
+      now,
+      now,
+      now
+    ]);
+    createdIds.push(id);
+  }
+
+  return c.json({ success: true, deckId: effectiveDeckId, createdCount: createdIds.length, ids: createdIds });
+});
+
+// Generate a new deck from documents/scope and persist cards
+flashcardsRoutes.post('/generate', async (c) => {
+  const userId = c.get('userId');
+  const dbService = new DatabaseService(c.env.DB);
+  const body = await c.req.json();
+  const {
+    courseId,
+    documentIds = [],
+    assignmentId,
+    weekId,
+    deckName,
+    highlightPrompt = '',
+    useSyllabusData = false,
+    extraInfo = '',
+    count = 20,
+    difficulty = 'medium'
+  } = body;
+
+  if (!courseId) {
+    createError('courseId is required', 400);
+  }
+
+  // Create a new deck for this generation
+  const deckId = 'deck_' + crypto.randomUUID();
+  const now = new Date().toISOString();
+  await dbService.execute(`
+    INSERT INTO decks (id, user_id, course_id, assignment_id, week_id, name, description, source_type, metadata, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    deckId,
+    userId,
+    courseId,
+    assignmentId || null,
+    weekId || null,
+    deckName || `Generated ${new Date().toLocaleString()}`,
+    highlightPrompt || null,
+    assignmentId ? 'test' : weekId ? 'week' : 'custom',
+    JSON.stringify({ highlightPrompt, useSyllabusData, extraInfo, documentIds, difficulty }),
+    now,
+    now
+  ]);
+
+  // Use existing AI endpoint under /ai/flashcards to generate raw cards
+  // We simulate internal call by reusing the Document/AI services via ContextSynthesis in this file if necessary.
+  // Simpler approach: call service implemented elsewhere; for now, we create a minimal plausible result:
+  // To keep consistent with your current /ai/flashcards, we will not duplicate logic here; frontend can preview via /ai then import.
+
+  // Respond with deck created; cards should be added via separate import using the generated content
+  return c.json({ success: true, deckId });
+});
+
+// Review a flashcard with 1-4 rating and update FSRS fields
 flashcardsRoutes.put('/:id/review', async (c) => {
+  const userId = c.get('userId');
+  const dbService = new DatabaseService(c.env.DB);
   const id = c.req.param('id');
   const { rating } = await c.req.json();
-  
-  // TODO: Update FSRS algorithm state based on review
+
+  const r = parseInt(rating);
+  if (!(r >= 1 && r <= 4)) {
+    return c.json({ success: false, error: 'rating must be 1..4' }, 400);
+  }
+
+  const card = await dbService.queryFirst(`SELECT * FROM flashcards WHERE id = ? AND user_id = ?`, [id, userId]);
+  if (!card) {
+    return c.json({ success: false, error: 'Card not found' }, 404);
+  }
+
+  const beforeNext = card.next_review;
+  const beforeStability = card.stability || 0;
+  const beforeDifficulty = card.difficulty || 5;
+  const beforeReps = (card.fsrs_state ? JSON.parse(card.fsrs_state).reps : 0) || 0;
+
+  // Use FSRS utility
+  const { updateFsrsState } = await import('../services/fsrs');
+  const result = updateFsrsState({
+    rating: r as 1|2|3|4,
+    state: {
+      stability: beforeStability,
+      difficulty: beforeDifficulty,
+      reps: beforeReps,
+    },
+  });
+
+  const updatedCount = (card.review_count || 0) + 1;
+
+  await dbService.execute(`
+    UPDATE flashcards
+    SET stability = ?, difficulty = ?, next_review = ?, review_count = ?, fsrs_state = ?, updated_at = ?
+    WHERE id = ? AND user_id = ?
+  `, [
+    result.state.stability,
+    result.state.difficulty,
+    result.nextReview,
+    updatedCount,
+    JSON.stringify(result.state),
+    new Date().toISOString(),
+    id,
+    userId
+  ]);
+
+  // Insert review log
+  await dbService.execute(`
+    INSERT INTO flashcard_reviews (id, user_id, flashcard_id, rating, reviewed_at, due_before, due_after, stability_before, stability_after, difficulty_before, difficulty_after)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    'rev_' + crypto.randomUUID(),
+    userId,
+    id,
+    r,
+    new Date().toISOString(),
+    beforeNext || null,
+    result.nextReview,
+    beforeStability,
+    result.state.stability,
+    beforeDifficulty,
+    result.state.difficulty
+  ]);
+
+  return c.json({ success: true, nextReview: result.nextReview });
+});
+
+// Update a flashcard (front/back/tags)
+flashcardsRoutes.put('/:id', async (c) => {
+  const userId = c.get('userId');
+  const dbService = new DatabaseService(c.env.DB);
+  const id = c.req.param('id');
+  const { front, back, tags } = await c.req.json();
+
+  const existing = await dbService.queryFirst(`SELECT id FROM flashcards WHERE id = ? AND user_id = ?`, [id, userId]);
+  if (!existing) return c.json({ success: false, error: 'Card not found' }, 404);
+
+  const sets: string[] = [];
+  const params: any[] = [];
+  if (typeof front === 'string') { sets.push('front = ?'); params.push(front); }
+  if (typeof back === 'string') { sets.push('back = ?'); params.push(back); }
+  if (Array.isArray(tags)) { sets.push('tags = ?'); params.push(JSON.stringify(tags)); }
+  sets.push('updated_at = ?'); params.push(new Date().toISOString());
+  params.push(id, userId);
+
+  await dbService.execute(`UPDATE flashcards SET ${sets.join(', ')} WHERE id = ? AND user_id = ?`, params);
+  return c.json({ success: true });
+});
+
+// Delete a flashcard
+flashcardsRoutes.delete('/:id', async (c) => {
+  const userId = c.get('userId');
+  const dbService = new DatabaseService(c.env.DB);
+  const id = c.req.param('id');
+
+  const res = await dbService.execute(`DELETE FROM flashcards WHERE id = ? AND user_id = ?`, [id, userId]);
+  if (!res.success || res.meta.changes === 0) return c.json({ success: false, error: 'Card not found' }, 404);
+  return c.json({ success: true });
+});
+
+// Get due flashcards
+flashcardsRoutes.get('/due', async (c) => {
+  const userId = c.get('userId');
+  const dbService = new DatabaseService(c.env.DB);
+  const courseId = c.req.query('courseId');
+  const deckId = c.req.query('deckId');
+  const limit = parseInt(c.req.query('limit') || '50');
+
+  const where: string[] = ['user_id = ?'];
+  const params: any[] = [userId];
+  if (courseId) { where.push('course_id = ?'); params.push(courseId); }
+  if (deckId) { where.push('deck_id = ?'); params.push(deckId); }
+  where.push('(next_review IS NULL OR next_review <= ?)');
+  params.push(new Date().toISOString());
+
+  const sql = `SELECT * FROM flashcards WHERE ${where.join(' AND ')} ORDER BY COALESCE(next_review, created_at) ASC LIMIT ?`;
+  params.push(limit);
+
+  const cards = await dbService.query(sql, params);
+  return c.json({ success: true, items: cards.map((row: any) => ({
+    id: row.id,
+    courseId: row.course_id,
+    deckId: row.deck_id,
+    front: row.front,
+    back: row.back,
+    tags: row.tags ? JSON.parse(row.tags) : [],
+    nextReview: row.next_review,
+  })) });
+});
+
+// Decks listing
+flashcardsRoutes.get('/decks', async (c) => {
+  const userId = c.get('userId');
+  const dbService = new DatabaseService(c.env.DB);
+  const courseId = c.req.query('courseId');
+  const assignmentId = c.req.query('assignmentId');
+  const weekId = c.req.query('weekId');
+  const query = c.req.query('query');
+
+  const where: string[] = ['user_id = ?'];
+  const params: any[] = [userId];
+  if (courseId) { where.push('course_id = ?'); params.push(courseId); }
+  if (assignmentId) { where.push('assignment_id = ?'); params.push(assignmentId); }
+  if (weekId) { where.push('week_id = ?'); params.push(weekId); }
+  if (query) { where.push('LOWER(name) LIKE ?'); params.push(`%${query.toLowerCase()}%`); }
+
+  const decks = await dbService.query(`
+    SELECT d.*,
+      (SELECT COUNT(*) FROM flashcards f WHERE f.deck_id = d.id) as total_cards,
+      (SELECT COUNT(*) FROM flashcards f WHERE f.deck_id = d.id AND (f.next_review IS NULL OR f.next_review <= ?)) as due_now
+    FROM decks d
+    WHERE ${where.join(' AND ')}
+    ORDER BY d.updated_at DESC
+  `, [new Date().toISOString(), ...params]);
+
+  return c.json({ success: true, decks: decks.map((d: any) => ({
+    id: d.id,
+    name: d.name,
+    description: d.description,
+    courseId: d.course_id,
+    assignmentId: d.assignment_id,
+    weekId: d.week_id,
+    sourceType: d.source_type,
+    totalCards: d.total_cards || 0,
+    dueNow: d.due_now || 0,
+    createdAt: d.created_at,
+    updatedAt: d.updated_at
+  })) });
+});
+
+// Deck details
+flashcardsRoutes.get('/decks/:id', async (c) => {
+  const userId = c.get('userId');
+  const dbService = new DatabaseService(c.env.DB);
+  const deckId = c.req.param('id');
+  const limit = parseInt(c.req.query('limit') || '50');
+  const offset = parseInt(c.req.query('offset') || '0');
+
+  const deck = await dbService.queryFirst(`SELECT * FROM decks WHERE id = ? AND user_id = ?`, [deckId, userId]);
+  if (!deck) return c.json({ success: false, error: 'Deck not found' }, 404);
+
+  const cards = await dbService.query(`
+    SELECT * FROM flashcards WHERE user_id = ? AND deck_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?
+  `, [userId, deckId, limit, offset]);
+
+  const countRow = await dbService.queryFirst(`SELECT COUNT(*) as total FROM flashcards WHERE user_id = ? AND deck_id = ?`, [userId, deckId]);
+  const total = (countRow as any)?.total || 0;
+
   return c.json({
-    message: 'Review flashcard endpoint - coming soon',
-    flashcardId: id,
-    rating
+    success: true,
+    deck: {
+      id: deck.id,
+      name: deck.name,
+      description: deck.description,
+      courseId: deck.course_id,
+      assignmentId: deck.assignment_id,
+      weekId: deck.week_id,
+      sourceType: deck.source_type
+    },
+    items: cards.map((row: any) => ({ id: row.id, front: row.front, back: row.back, nextReview: row.next_review })),
+    pagination: { total, limit, offset, hasMore: total > offset + limit }
   });
 });
 
-flashcardsRoutes.get('/due', async (c) => {
-  // TODO: Get flashcards due for review using FSRS algorithm
-  return c.json({
-    message: 'Get due flashcards endpoint - coming soon',
-    flashcards: []
-  });
+// Basic stats (totals, due now, reviewed today, new today)
+flashcardsRoutes.get('/stats', async (c) => {
+  const userId = c.get('userId');
+  const dbService = new DatabaseService(c.env.DB);
+  const courseId = c.req.query('courseId');
+  const deckId = c.req.query('deckId');
+
+  const whereCards: string[] = ['user_id = ?'];
+  const paramsCards: any[] = [userId];
+  if (courseId) { whereCards.push('course_id = ?'); paramsCards.push(courseId); }
+  if (deckId) { whereCards.push('deck_id = ?'); paramsCards.push(deckId); }
+
+  const totalRow = await dbService.queryFirst(`SELECT COUNT(*) as total FROM flashcards WHERE ${whereCards.join(' AND ')}`, paramsCards);
+  const dueRow = await dbService.queryFirst(`SELECT COUNT(*) as due FROM flashcards WHERE ${whereCards.join(' AND ')} AND (next_review IS NULL OR next_review <= ?)`, [...paramsCards, new Date().toISOString()]);
+
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const createdRow = await dbService.queryFirst(`SELECT COUNT(*) as created FROM flashcards WHERE ${whereCards.join(' AND ')} AND created_at >= ?`, [...paramsCards, todayStart.toISOString()]);
+  const reviewedRow = await dbService.queryFirst(`SELECT COUNT(*) as reviewed FROM flashcard_reviews WHERE user_id = ? AND reviewed_at >= ?`, [userId, todayStart.toISOString()]);
+
+  return c.json({ success: true, stats: {
+    total: (totalRow as any)?.total || 0,
+    dueNow: (dueRow as any)?.due || 0,
+    newToday: (createdRow as any)?.created || 0,
+    reviewedToday: (reviewedRow as any)?.reviewed || 0
+  }});
 });
 
 // Activity routes
@@ -2884,3 +3341,4 @@ apiRoutes.route('/planner', plannerRoutes);
 apiRoutes.route('/semesters', semestersRouter);
 apiRoutes.route('/tags', tagsRouter);
 apiRoutes.route('/ingest/syllabus', syllabusRouter);
+apiRoutes.route('/grades', gradesRouter);
