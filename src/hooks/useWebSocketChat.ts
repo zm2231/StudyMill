@@ -26,6 +26,7 @@ interface UseWebSocketChatOptions {
   courseId?: string;
   scope?: string;
   userId?: string;
+  retrievalMode?: 'basic' | 'advanced';
   onMessage?: (message: Message) => void;
   onError?: (error: string) => void;
 }
@@ -36,7 +37,8 @@ export function useWebSocketChat({
   scope,
   onMessage,
   onError,
-  userId
+  userId,
+  retrievalMode = 'advanced'
 }: UseWebSocketChatOptions) {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -303,7 +305,8 @@ export function useWebSocketChat({
     wsRef.current.send(JSON.stringify({
       type: 'chat_message',
       content,
-      courseId
+      courseId,
+      retrievalMode
     }));
 
     // Update message status to sent
@@ -316,7 +319,7 @@ export function useWebSocketChat({
     );
 
     return true;
-  }, [courseId, onError]);
+  }, [courseId, onError, retrievalMode]);
 
   // Send typing indicators
   const sendTyping = useCallback((isTyping: boolean) => {

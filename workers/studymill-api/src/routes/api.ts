@@ -7,6 +7,7 @@ import { DocumentService } from '../services/document';
 import { DocumentProcessorService } from '../services/documentProcessor';
 import { VectorService } from '../services/vector';
 import { SemanticSearchService } from '../services/semanticSearch';
+import { HybridSearchService } from '../services/hybridSearch';
 import { createAudioProcessor, AudioProcessor } from '../services/audioProcessor';
 import { EnhancedMemoryService } from '../services/enhancedMemory';
 import { AssignmentService } from '../services/assignment';
@@ -1343,7 +1344,7 @@ chatRoutes.post('/sessions/:id/messages', async (c) => {
     );
 
     // Get context for the query
-    const searchService = new SemanticSearchService(
+    const searchService = new HybridSearchService(
       new VectorService(c.env.AI, c.env.VECTORIZE, dbService),
       dbService
     );
@@ -3124,7 +3125,7 @@ aiRoutes.post('/summarize', async (c) => {
         c.env.VECTORIZE_INDEX
       ),
       new QueryProcessorService(),
-      c.env.GOOGLE_API_KEY
+      c.env.GEMINI_API_KEY
     );
 
     const query = `Summarize this ${document.document_type}: ${document.title}`;
@@ -3190,7 +3191,7 @@ aiRoutes.post('/study-guide', async (c) => {
         c.env.VECTORIZE_INDEX
       ),
       new QueryProcessorService(),
-      c.env.GOOGLE_API_KEY
+      c.env.GEMINI_API_KEY
     );
 
     const docTitles = documents.results.map(d => d.title).join(', ');
@@ -3257,7 +3258,7 @@ aiRoutes.post('/flashcards', async (c) => {
         c.env.VECTORIZE_INDEX
       ),
       new QueryProcessorService(),
-      c.env.GOOGLE_API_KEY
+      c.env.GEMINI_API_KEY
     );
 
     const query = `Create ${count} ${difficulty} flashcards from this ${document.document_type}: ${document.title}. Format each as "Q: [question] | A: [answer]"`;

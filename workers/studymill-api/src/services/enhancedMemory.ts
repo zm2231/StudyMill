@@ -606,7 +606,7 @@ export class EnhancedMemoryService {
       prompt += `\n\nAdditional related context:\n${relatedContent}`;
     }
 
-    // Use Gemini to generate synthesis (simplified - would need actual API call)
+    // Use Gemini to generate synthesis via SDK (simplified)
     const synthesis = await this.generateSynthesis(prompt);
 
     return {
@@ -679,63 +679,25 @@ export class EnhancedMemoryService {
     // PRIORITY 1: Always try Gemini 2.5 Flash first if API key is available
     if (this.geminiApiKey) {
       try {
-        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': this.geminiApiKey
-          },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `You are an expert at synthesizing and connecting information from academic memories. 
-                
-Please create a comprehensive synthesis based on the following prompt:
-${prompt}
+        const { GenAIService } = await import('./genaiClient');
+        const genAI = new GenAIService(this.geminiApiKey, 'gemini-2.5-flash');
+        const systemPrompt = 'You are an expert at synthesizing and connecting information from academic memories.';
+        const text = await genAI.generateText(
+          `Please create a comprehensive synthesis based on the following prompt:\n${prompt}\n\nGuidelines:\n- Connect related concepts and identify patterns\n- Highlight contradictions or differing perspectives if present\n- Synthesize the information into coherent insights\n- Maintain academic rigor and accuracy\n- Keep the synthesis concise but comprehensive (300-500 words)\n\nSynthesis:`,
+          systemPrompt,
+          { temperature: 0.7, topK: 40, topP: 0.8, maxOutputTokens: 800 }
+        );
 
-Guidelines:
-- Connect related concepts and identify patterns
-- Highlight contradictions or differing perspectives if present
-- Synthesize the information into coherent insights
-- Maintain academic rigor and accuracy
-- Keep the synthesis concise but comprehensive (300-500 words)
-
-Synthesis:`
-              }]
-            }],
-            generationConfig: {
-              temperature: 0.7,
-              topK: 40,
-              topP: 0.8,
-              maxOutputTokens: 800,
-            }
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const synthesisText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          
-          if (synthesisText && synthesisText.trim().length > 0) {
-            console.log('✅ Memory synthesis generated using Gemini 2.5 Flash');
-            return synthesisText.trim();
-          } else {
-            console.warn('⚠️ Gemini returned empty content, retrying...');
-            // If Gemini returns empty, return error message instead of falling back
-            return `Memory synthesis temporarily unavailable. Gemini API returned empty content. Please try again in a moment.`;
-          }
+        if (text && text.trim().length > 0) {
+          console.log('✅ Memory synthesis generated using Gemini 2.5 Flash (SDK)');
+          return text.trim();
         } else {
-          console.error(`❌ Gemini API error: ${response.status} ${response.statusText}`);
-          // Only fall back to Llama if Gemini is truly unavailable (500+ errors)
-          if (response.status >= 500) {
-            console.log('🔄 Gemini server error, falling back to Cloudflare Workers AI...');
-          } else {
-            return `Memory synthesis temporarily unavailable. Gemini API error (${response.status}). Please try again later.`;
-          }
+          console.warn('⚠️ Gemini returned empty content');
+          return `Memory synthesis temporarily unavailable. Gemini API returned empty content. Please try again in a moment.`;
         }
       } catch (error) {
-        console.error('❌ Gemini fetch failed:', error);
-        console.log('🔄 Network/connection error, falling back to Cloudflare Workers AI...');
+        console.error('❌ Gemini SDK call failed:', error);
+        console.log('🔄 Falling back to Cloudflare Workers AI...');
       }
     } else {
       console.log('🔄 No Gemini API key provided, using Cloudflare Workers AI fallback...');

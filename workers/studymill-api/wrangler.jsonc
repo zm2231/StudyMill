@@ -203,7 +203,7 @@
 	 * 
 	 * Secrets (set via wrangler secret put):
 	 * - JWT_SECRET
-	 * - GOOGLE_API_KEY (for Gemini)
+	 * - GEMINI_API_KEY (Google Generative AI SDK)
 	 * - GROQ_API_KEY (for Whisper)
 	 * - PARSE_EXTRACT_API_KEY
 	 */

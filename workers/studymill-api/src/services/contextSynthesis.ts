@@ -332,7 +332,7 @@ export class ContextSynthesisService {
   }
 
   /**
-   * Generate synthesis using Gemini
+   * Generate synthesis using Gemini 2.5 via SDK
    */
   private async generateSynthesis(
     query: string,
@@ -371,27 +371,12 @@ Please provide a response that:
 Response:`;
 
     try {
-      // Use Gemini API to generate synthesis
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.geminiApiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.3, // Lower temperature for more factual responses
-            maxOutputTokens: 1000,
-            topP: 0.9
-          }
-        })
-      });
-
-      const data = await response.json();
-      
-      if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        return data.candidates[0].content.parts[0].text.trim();
-      } else {
-        throw new Error('Invalid response from Gemini API');
-      }
+      const { GenAIService } = await import('./genaiClient');
+      const genAI = new GenAIService(this.geminiApiKey, 'gemini-2.5-flash');
+      const systemPrompt = 'You are an academic assistant that synthesizes context into helpful, accurate answers with citations when possible.';
+      const text = await genAI.generateText(prompt, systemPrompt, { temperature: 0.3, maxOutputTokens: 1000, topP: 0.9 });
+      if (text && text.trim()) return text.trim();
+      throw new Error('Empty response from Gemini');
     } catch (error) {
       console.error('Synthesis generation failed:', error);
       // Fallback to simple context concatenation
@@ -561,27 +546,13 @@ Response:`;
    * Summarize a long conversation using AI
    */
   private async summarizeConversation(conversationText: string): Promise<string> {
-    const prompt = `Please summarize this conversation, preserving key information, questions asked, and important insights:
-
-${conversationText}
-
-Summary:`;
+    const prompt = `Please summarize this conversation, preserving key information, questions asked, and important insights:\n\n${conversationText}\n\nSummary:`;
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.geminiApiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 500
-          }
-        })
-      });
-
-      const data = await response.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || conversationText;
+      const { GenAIService } = await import('./genaiClient');
+      const genAI = new GenAIService(this.geminiApiKey, 'gemini-2.5-flash');
+      const text = await genAI.generateText(prompt, 'You summarize conversations accurately and concisely.', { temperature: 0.3, maxOutputTokens: 500 });
+      return text?.trim() || conversationText;
     } catch (error) {
       console.warn('Conversation summarization failed:', error);
       return conversationText; // Return original if summarization fails

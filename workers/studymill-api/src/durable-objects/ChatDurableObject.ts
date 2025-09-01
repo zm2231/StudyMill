@@ -1,8 +1,9 @@
 import { DurableObject } from 'cloudflare:workers';
 import { DatabaseService } from '../services/database';
 import { VectorService } from '../services/vector';
-import { SemanticSearchService } from '../services/semanticSearch';
+import { HybridSearchService, type RetrievalMode } from '../services/hybridSearch';
 import { createError } from '../middleware/error';
+import { GenAIService, type ChatHistoryMessage } from '../services/genaiClient';
 
 interface ChatMessage {
   id: string;
@@ -45,7 +46,7 @@ export class ChatDurableObject extends DurableObject {
   private sessionId: string;
   private session: ChatSession | null = null;
   private dbService: DatabaseService | null = null;
-  private searchService: SemanticSearchService | null = null;
+private searchService: HybridSearchService | null = null;
 
   constructor(ctx: DurableObjectState, env: ChatDurableObjectEnv) {
     super(ctx, env);
@@ -153,8 +154,8 @@ export class ChatDurableObject extends DurableObject {
       const data = JSON.parse(event.data as string);
       
       switch (data.type) {
-        case 'chat_message':
-          await this.handleChatMessage(client, data.content, data.courseId);
+case 'chat_message':
+          await this.handleChatMessage(client, data.content, data.courseId, (data.retrievalMode as RetrievalMode) || 'advanced');
           break;
         case 'typing_start':
           this.broadcastToOthers(client, { type: 'user_typing', userId: client.userId });
@@ -178,7 +179,7 @@ export class ChatDurableObject extends DurableObject {
   /**
    * Handle chat messages and generate AI responses
    */
-  private async handleChatMessage(client: WebSocketClient, content: string, courseId?: string) {
+private async handleChatMessage(client: WebSocketClient, content: string, courseId?: string, retrievalMode: RetrievalMode = 'advanced') {
     if (!this.dbService || !this.searchService) {
       throw new Error('Services not initialized');
     }
@@ -206,8 +207,8 @@ export class ChatDurableObject extends DurableObject {
       message: userMessage
     });
 
-    // Retrieve context using vector search
-    const context = await this.retrieveContext(content, client.userId, courseId);
+// Retrieve context using vector search
+    const context = await this.retrieveContext(content, client.userId, courseId, retrievalMode);
 
     // Generate AI response
     await this.generateAIResponse(content, context, client.userId, courseId);
@@ -216,18 +217,19 @@ export class ChatDurableObject extends DurableObject {
   /**
    * Retrieve relevant context using vector search
    */
-  private async retrieveContext(query: string, userId: string, courseId?: string): Promise<string> {
+private async retrieveContext(query: string, userId: string, courseId?: string, retrievalMode: RetrievalMode = 'advanced'): Promise<string> {
     if (!this.searchService) {
       return '';
     }
 
     try {
-      const searchResults = await this.searchService.hybridSearch({
+const searchResults = await this.searchService.hybridSearch({
         query,
         userId,
-        containerTags: courseId ? [courseId] : undefined,
+        courseId,
         limit: 5,
-        threshold: 0.7
+        mode: retrievalMode,
+        threshold: 0.0
       });
 
       // Format context from search results
@@ -243,7 +245,7 @@ export class ChatDurableObject extends DurableObject {
   }
 
   /**
-   * Generate AI response using Gemini Flash and stream back to clients
+   * Generate AI response using Gemini 2.5 (SDK) and stream back to clients
    */
   private async generateAIResponse(query: string, context: string, userId: string, courseId?: string) {
     // Prepare variables outside try so we can handle partials on error
@@ -257,8 +259,6 @@ export class ChatDurableObject extends DurableObject {
     let fullContent = '';
 
     try {
-      // Create assistant message placeholder (already initialized above)
-
       // Broadcast model info (will be updated if fallback occurs)
       if (!this.env.GEMINI_API_KEY) {
         this.broadcastToAll({ type: 'ai_info', model: '@cf/meta/llama-3.1-8b-instruct', reason: 'no_gemini_key' });
@@ -278,7 +278,7 @@ export class ChatDurableObject extends DurableObject {
       // If no Gemini key is configured, fallback to Cloudflare Workers AI
       if (!this.env.GEMINI_API_KEY) {
         try {
-        const result = await (this.env as any).AI.run('@cf/meta/llama-3.1-8b-instruct', { prompt: this.buildPrompt(query, context), max_tokens: 1024, temperature: 0.7 });
+          const result = await (this.env as any).AI.run('@cf/meta/llama-3.1-8b-instruct', { prompt, max_tokens: 1024, temperature: 0.7 });
           const text = (result && (result.response || result.text || result.output)) ? (result.response || result.text || result.output) : String(result ?? '');
           assistantMessage.content = text;
           // Stream as a single chunk for now
@@ -292,7 +292,7 @@ export class ChatDurableObject extends DurableObject {
         }
       }
 
-      // Use Gemini 2.5 Flash for response generation with streaming
+      // Use Gemini 2.5 via SDK for response generation with streaming
       const systemPrompt = [
         'You are StudyMill AI, the academic assistant inside the StudyMill app.',
         'Capabilities:',
@@ -309,164 +309,37 @@ export class ChatDurableObject extends DurableObject {
         '- Decline requests that are unsafe, disallowed by policy, or would produce harmful outcomes.',
       ].join('\n');
 
-      // Streaming request with timeout
-      const ac = new AbortController();
-      const streamTimeout = setTimeout(() => ac.abort('stream_timeout'), 30000); // 30s safety
-      const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=${this.env.GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      // Assemble recent conversation history (last 20 messages)
+      const history = await this.loadRecentHistory(20);
+
+      // Log the attempt to use Gemini SDK
+      console.log(JSON.stringify({
+        event: 'gemini_sdk_request_start',
+        ts: new Date().toISOString(),
+        sessionId: this.sessionId,
+        hasApiKey: !!this.env.GEMINI_API_KEY,
+        apiKeyLength: this.env.GEMINI_API_KEY?.length || 0
+      }));
+
+      // Stream using SDK
+      const genAI = new GenAIService(this.env.GEMINI_API_KEY, 'gemini-2.5-flash');
+      fullContent = await genAI.streamChat(
+        {
+          systemPrompt,
+          history,
+          userText: prompt,
+          generationConfig: { temperature: 0.7, topP: 0.8, topK: 40, maxOutputTokens: 8192 }
         },
-        body: JSON.stringify({
-          contents: [{
-            role: 'user',
-            parts: [{ text: prompt }]
-          }],
-          systemInstruction: {
-            parts: [{ text: systemPrompt }]
-          },
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 8192,  // Increased from 2048 for longer responses
-            topP: 0.8,
-            topK: 40
-          }
-        }),
-        signal: ac.signal
-      });
-      clearTimeout(streamTimeout);
-
-      if (!geminiResponse.ok) {
-        const errText = await geminiResponse.text().catch(() => '');
-        // Structured log for diagnostics
-        try {
-          console.error(JSON.stringify({
-            event: 'gemini_stream_http_error',
-            ts: new Date().toISOString(),
-            status: geminiResponse.status,
-            statusText: geminiResponse.statusText,
-            body: errText.slice(0, 500)
-          }));
-        } catch {}
-        throw new Error(`Gemini API error: ${geminiResponse.status} ${geminiResponse.statusText} ${errText}`);
-      }
-
-      const reader = geminiResponse.body?.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      if (reader) {
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed) continue;
-
-              // Gemini streams JSON objects, sometimes with data: prefix, and may include [DONE]
-              const cleanLine = trimmed.replace(/^data:\s*/, '');
-              if (cleanLine === '[DONE]') continue;
-
-              try {
-                const parsed = JSON.parse(cleanLine);
-
-                // Extract text from Gemini response structure
-                const parts = parsed?.candidates?.[0]?.content?.parts;
-                if (Array.isArray(parts)) {
-                  const textChunk = parts.map((p: any) => p?.text || '').filter(Boolean).join('');
-                  if (textChunk) {
-                    fullContent += textChunk;
-                    // Broadcast chunk to all clients
-                    this.broadcastToAll({
-                      type: 'message_chunk',
-                      messageId: assistantMessage.id,
-                      chunk: textChunk
-                    });
-                  }
-                }
-              } catch (e) {
-                // Skip malformed JSON chunks
-                console.warn('Failed to parse streaming chunk:', cleanLine);
-              }
-            }
-          }
-        } finally {
-          reader.releaseLock();
-        }
-      }
-
-      // Flush any remaining buffered line (in case stream ended without newline)
-      if (buffer && buffer.trim()) {
-        try {
-          const cleanLine = buffer.trim().replace(/^data:\s*/, '');
-          if (cleanLine !== '[DONE]') {
-            const parsed = JSON.parse(cleanLine);
-            const parts = parsed?.candidates?.[0]?.content?.parts;
-            if (Array.isArray(parts)) {
-              const textChunk = parts.map((p: any) => p?.text || '').filter(Boolean).join('');
-              if (textChunk) {
-                fullContent += textChunk;
-                this.broadcastToAll({
-                  type: 'message_chunk',
-                  messageId: assistantMessage.id,
-                  chunk: textChunk
-                });
-              }
-            }
-          }
-        } catch (e) {
-          // ignore final parse failure
-        }
-      }
-
-      // If no content arrived from stream, attempt a non-streaming retry with the same model
-      if (!fullContent || fullContent.trim().length === 0) {
-        try {
-          this.broadcastToAll({ type: 'ai_info', model: 'gemini-2.5-flash', reason: 'retry_nonstream' });
-          const ac2 = new AbortController();
-          const nonStreamTimeout = setTimeout(() => ac2.abort('nonstream_timeout'), 25000);
-          const retryResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${this.env.GEMINI_API_KEY}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ role: 'user', parts: [{ text: prompt }] }],
-              systemInstruction: { parts: [{ text: systemPrompt }] },
-              generationConfig: { temperature: 0.7, maxOutputTokens: 4096, topP: 0.8, topK: 40 }
-            }),
-            signal: ac2.signal
+        (chunk) => {
+          this.broadcastToAll({
+            type: 'message_chunk',
+            messageId: assistantMessage.id,
+            chunk
           });
-          clearTimeout(nonStreamTimeout);
-          if (retryResp.ok) {
-            const payload = await retryResp.json();
-            const text = (payload?.candidates?.[0]?.content?.parts || [])
-              .map((p: any) => p?.text || '')
-              .filter(Boolean)
-              .join('');
-            if (text && text.trim()) {
-              fullContent = text;
-              // Stream as one chunk to finish UX
-              this.broadcastToAll({ type: 'message_chunk', messageId: assistantMessage.id, chunk: text });
-            }
-          } else {
-            const errText = await retryResp.text().catch(() => '');
-            try {
-              console.error(JSON.stringify({ event: 'gemini_nonstream_http_error', ts: new Date().toISOString(), status: retryResp.status, body: errText.slice(0, 500) }));
-            } catch {}
-          }
-        } catch (e) {
-          try {
-            console.error(JSON.stringify({ event: 'gemini_nonstream_failed', ts: new Date().toISOString(), error: String(e).slice(0, 300) }));
-          } catch {}
         }
-      }
+      );
 
-      // Update message with full content (from stream or retry)
+      // Update message with full content
       assistantMessage.content = fullContent;
 
       // Store complete message
@@ -494,7 +367,7 @@ export class ChatDurableObject extends DurableObject {
       });
 
     } catch (error) {
-      console.error('Error generating AI response (Gemini path):', error);
+      console.error('Error generating AI response (Gemini SDK path):', error);
 
       // If we already streamed some content, finalize this message with the partial content
       if (fullContent && fullContent.trim().length > 0) {
@@ -669,6 +542,28 @@ Please provide your response:`;
   }
 
   /**
+   * Load recent chat history for the session (user + assistant)
+   */
+  private async loadRecentHistory(limit = 20): Promise<ChatHistoryMessage[]> {
+    if (!this.dbService) return [];
+    try {
+      const rows = await this.dbService.query(
+        `SELECT role, content FROM chat_messages WHERE session_id = ? ORDER BY created_at DESC LIMIT ?`,
+        [this.sessionId, limit]
+      );
+      // Return in chronological order
+      const chronological = rows.reverse();
+      return chronological.map((r: any) => ({
+        role: (r.role === 'assistant' ? 'assistant' : 'user') as ChatHistoryMessage['role'],
+        content: r.content as string
+      }));
+    } catch (e) {
+      console.warn('Failed to load chat history:', e);
+      return [];
+    }
+  }
+
+  /**
    * Initialize database and search services
    */
   private async initializeServices() {
@@ -703,7 +598,7 @@ Please provide your response:`;
     if (!this.searchService) {
       // Create VectorService with Cloudflare AI binding
       const vectorService = new VectorService(this.env.AI, this.env.VECTORIZE, this.dbService);
-      this.searchService = new SemanticSearchService(vectorService, this.dbService);
+this.searchService = new HybridSearchService(vectorService, this.dbService);
     }
   }
 

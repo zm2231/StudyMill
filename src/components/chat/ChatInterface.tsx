@@ -70,6 +70,7 @@ export function ChatInterface({
   const [availableScopes, setAvailableScopes] = useState<ChatScope[]>([
     { value: 'all', label: 'All Documents', type: 'all' }
   ]);
+  const [retrievalMode, setRetrievalMode] = useState<'basic' | 'advanced'>('advanced');
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
@@ -91,6 +92,7 @@ export function ChatInterface({
     courseId,
     scope: selectedScope,
     userId: user?.id,
+    retrievalMode,
     onError: (error) => {
       console.error('Chat error:', error);
     }
@@ -398,6 +400,18 @@ export function ChatInterface({
                 placeholder={isConnecting ? 'Connecting…' : 'Select scope'}
                 w={220}
                 size="sm"
+              />
+              <Select
+                value={retrievalMode}
+                onChange={(value) => setRetrievalMode((value as 'basic' | 'advanced') || 'advanced')}
+                data={[
+                  { value: 'advanced', label: 'Advanced (Hybrid)' },
+                  { value: 'basic', label: 'Basic (Semantic)' }
+                ]}
+                placeholder="Retrieval"
+                w={220}
+                size="sm"
+              
                 styles={{
                   input: {
                     backgroundColor: 'var(--sanctuary-surface)',
@@ -462,12 +476,17 @@ export function ChatInterface({
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
+            overflow: 'hidden',
+            minHeight: 0,
           }}
         >
           <ScrollArea
-            style={{ flex: 1 }}
+            style={{ flex: 1, height: '100%' }}
             viewportRef={scrollAreaRef}
             p="md"
+            type="scroll"
+            scrollbarSize={8}
+            offsetScrollbars
           >
             <Stack gap="md">
               {messages.length === 0 ? (
