@@ -461,9 +461,27 @@ class ApiClient {
     success: boolean;
     message: string;
   }> {
-    return this.request(`/api/v1/courses/${id}`, {
-      method: 'DELETE',
-    });
+    try {
+      const res = await this.request(`/api/v1/courses/${id}`, {
+        method: 'DELETE',
+      });
+      // If server returned no body (e.g., 204) or an empty object, normalize to success
+      if (!res || (typeof res === 'object' && Object.keys(res as any).length === 0)) {
+        return { success: true, message: 'Course deleted' };
+      }
+      const success = (res as any).success;
+      const message = (res as any).message;
+      return { success: success ?? true, message: message ?? 'Course deleted' };
+    } catch (error) {
+      // Treat 404 as a successful, idempotent delete (resource already gone)
+      if (error instanceof ApiErrorClass) {
+        const msg = (error.message || '').toLowerCase();
+        if (msg.includes('not found') || error.code === 'NOT_FOUND') {
+          return { success: true, message: 'Course already deleted' };
+        }
+      }
+      throw error;
+    }
   }
 
   async getCourse(id: string): Promise<{

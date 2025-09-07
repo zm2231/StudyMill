@@ -438,12 +438,21 @@ coursesRoutes.delete('/:id', async (c) => {
   const dbService = new DatabaseService(c.env.DB);
   const courseService = new CourseService(dbService);
   
-  await courseService.deleteCourse(courseId, userId);
-  
-  return c.json({
-    success: true,
-    message: 'Course deleted successfully'
-  });
+  try {
+    await courseService.deleteCourse(courseId, userId);
+    return c.json({
+      success: true,
+      message: 'Course deleted successfully'
+    }, 200);
+  } catch (err: any) {
+    // Make delete idempotent: treat not-found as success
+    const status = err?.statusCode || err?.status;
+    const code = err?.code || err?.message;
+    if (status === 404 || String(code).toUpperCase().includes('NOT_FOUND')) {
+      return c.json({ success: true, message: 'Course already deleted' }, 200);
+    }
+    throw err;
+  }
 });
 
 

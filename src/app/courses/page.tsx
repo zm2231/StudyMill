@@ -39,6 +39,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { CourseCreation } from '@/components/courses/CourseCreation';
 import { notifications } from '@mantine/notifications';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
+import { useCoursesWithSWR } from '@/hooks/useCoursesWithSWR';
 
 interface Semester {
   id: string;
@@ -73,17 +74,19 @@ export default function CoursesPage() {
   const [editingCourse, setEditingCourse] = useState<CourseWithDetails | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [semesters, setSemesters] = useState<Semester[]>([]);
-  const [courses, setCourses] = useState<CourseWithDetails[]>([]);
-  const [loading, setLoading] = useState(true);
   const { preferences } = useUserPreferences();
+  const { courses = [], deleteCourse: swrDeleteCourse, revalidate, isLoading, isValidating } = useCoursesWithSWR();
+  const loading = isLoading || isValidating;
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchSemesters();
   }, []);
 
   useEffect(() => {
-    fetchCourses();
-  }, [selectedSemester, showArchived]);
+    // Revalidate courses when filters change (server currently returns active courses only)
+    revalidate();
+  }, [selectedSemester, showArchived, revalidate]);
 
   const fetchSemesters = async () => {
     try {
@@ -95,26 +98,7 @@ export default function CoursesPage() {
     }
   };
 
-  const fetchCourses = async () => {
-    setLoading(true);
-    try {
-      const { apiClient } = await import('@/lib/api');
-      let url = '/api/v1/courses?';
-      if (selectedSemester !== 'all') {
-        url += `semester_id=${selectedSemester}&`;
-      }
-      if (showArchived) {
-        url += 'include_archived=true';
-      }
-
-      const data = await apiClient.request<{ courses: CourseWithDetails[] }>(url);
-      setCourses(data.courses);
-    } catch (error) {
-      console.error('Failed to fetch courses:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Courses are managed by SWR via useCoursesWithSWR
 
   const handleArchiveCourse = async (courseId: string) => {
     try {
@@ -130,7 +114,7 @@ export default function CoursesPage() {
         message: 'The course has been archived successfully',
         color: 'green'
       });
-      fetchCourses();
+      revalidate();
     } catch (error) {
       notifications.show({
         title: 'Error',
@@ -154,7 +138,7 @@ export default function CoursesPage() {
         message: 'The course has been restored successfully',
         color: 'green'
       });
-      fetchCourses();
+      revalidate();
     } catch (error) {
       notifications.show({
         title: 'Error',
@@ -165,28 +149,44 @@ export default function CoursesPage() {
   };
 
   const handleDeleteCourse = async (courseId: string) => {
+    if (deletingId === courseId) return; // guard against double clicks
+
     if (!confirm('Are you sure you want to permanently delete this course? This action cannot be undone.')) {
       return;
     }
 
+    setDeletingId(courseId);
+
     try {
-      const { apiClient } = await import('@/lib/api');
-      await apiClient.request(`/api/v1/courses/${courseId}`, {
-        method: 'DELETE'
-      });
+      await swrDeleteCourse(courseId);
 
       notifications.show({
         title: 'Course deleted',
         message: 'The course has been permanently deleted',
         color: 'green'
       });
-      fetchCourses();
-    } catch (error) {
-      notifications.show({
-        title: 'Error',
-        message: 'Failed to delete course',
-        color: 'red'
-      });
+    } catch (err: any) {
+      const msg = (err?.message || '').toLowerCase();
+      if (msg.includes('not found')) {
+        // Treat 404 as success (already deleted)
+        notifications.show({
+          title: 'Course deleted',
+          message: 'The course was already removed',
+          color: 'green'
+        });
+      } else {
+        notifications.show({
+          title: 'Error',
+          message: 'Failed to delete course',
+          color: 'red'
+        });
+        // Re-sync from server in case optimistic update was wrong
+        await revalidate();
+      }
+    } finally {
+      setDeletingId(null);
+      // Ensure we’re in sync
+      revalidate();
     }
   };
 
@@ -212,7 +212,7 @@ export default function CoursesPage() {
       });
 
       setSelectedCourses([]);
-      fetchCourses();
+      revalidate();
     } catch (error) {
       notifications.show({
         title: 'Error',
@@ -480,9 +480,10 @@ export default function CoursesPage() {
                                 <Menu.Item
                                   color="red"
                                   leftSection={<IconTrash size={14} />}
-                                  onClick={() => handleDeleteCourse(course.id)}
+                                  disabled={deletingId === course.id}
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteCourse(course.id); }}
                                 >
-                                  Delete
+                                  {deletingId === course.id ? 'Deleting…' : 'Delete'}
                                 </Menu.Item>
                               </Menu.Dropdown>
                             </Menu>
@@ -500,7 +501,7 @@ export default function CoursesPage() {
               onClose={() => setShowCreateModal(false)}
               onSuccess={() => {
                 setShowCreateModal(false);
-                fetchCourses();
+                revalidate();
               }}
             />
 
@@ -513,7 +514,7 @@ export default function CoursesPage() {
               onSuccess={() => {
                 setShowEditModal(false);
                 setEditingCourse(null);
-                fetchCourses();
+                revalidate();
               }}
               editMode={!!editingCourse}
               initialData={editingCourse || undefined}
