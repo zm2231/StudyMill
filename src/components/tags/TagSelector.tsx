@@ -262,7 +262,6 @@ export function TagSelector({
             ) : 'No tags available'
           }
           renderOption={renderSelectOption}
-          valueComponent={renderValue}
           clearable
           maxDropdownHeight={300}
         />

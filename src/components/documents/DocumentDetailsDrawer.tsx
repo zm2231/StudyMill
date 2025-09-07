@@ -113,18 +113,18 @@ export function DocumentDetailsDrawer({
       const { apiClient } = await import('@/lib/api');
       await apiClient.request(`/api/v1/documents/${document.id}`, {
         method: 'PATCH',
-        body: {
+        body: JSON.stringify({
           filename: editedName,
           description: editedDescription
-        }
+        })
       });
 
       // Update tags
       await apiClient.request(`/api/v1/documents/${document.id}/tags`, {
         method: 'POST',
-        body: {
+        body: JSON.stringify({
           tagIds: selectedTags
-        }
+        })
       });
 
       notifications.show({

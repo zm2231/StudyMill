@@ -309,10 +309,12 @@ export function SemesterPicker({
             placeholder="Select start and end dates"
             value={newSemesterDates}
             onChange={(dates) => {
-              setNewSemesterDates(dates);
+              const d0 = (dates as any)[0] ? new Date((dates as any)[0]) : null;
+              const d1 = (dates as any)[1] ? new Date((dates as any)[1]) : null;
+              setNewSemesterDates([d0, d1]);
               // Auto-generate name if empty
-              if (dates[0] && !newSemesterName) {
-                setNewSemesterName(generateSemesterName(dates[0]));
+              if (d0 && !newSemesterName) {
+                setNewSemesterName(generateSemesterName(d0));
               }
             }}
             required

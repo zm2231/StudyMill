@@ -171,7 +171,7 @@ export function secureCORS() {
     c.res.headers.set('Access-Control-Allow-Credentials', 'true');
     c.res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     c.res.headers.set('Access-Control-Allow-Headers', 
-      'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token'
+      'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token, Idempotency-Key, idempotency-key, X-User-ID'
     );
     c.res.headers.set('Access-Control-Max-Age', '86400'); // 24 hours
 
@@ -182,7 +182,7 @@ export function secureCORS() {
         headers: {
           'Access-Control-Allow-Origin': origin || '*',
           'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token',
+'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token, Idempotency-Key, idempotency-key, X-User-ID',
           'Access-Control-Max-Age': '86400'
         }
       });

@@ -123,8 +123,8 @@ export function LibraryView({ onDocumentSelect, onBulkAction }: LibraryViewProps
         // Transform API data to ensure proper Date objects
         const transformedDocuments = response.documents.map(doc => ({
           ...doc,
-          updatedAt: new Date(doc.updatedAt),
-          createdAt: doc.createdAt ? new Date(doc.createdAt) : undefined
+          updatedAt: new Date((doc as any).updatedAt),
+          createdAt: (doc as any).createdAt ? new Date((doc as any).createdAt) : undefined
         }));
         setDocuments(transformedDocuments);
       } else {
@@ -298,7 +298,12 @@ export function LibraryView({ onDocumentSelect, onBulkAction }: LibraryViewProps
                 label="Date Range"
                 placeholder="Pick date range"
                 value={filters.dateRange}
-                onChange={(value) => updateFilter('dateRange', value)}
+                onChange={(value) => {
+                  const v = value as any;
+                  const d0 = v?.[0] ? new Date(v[0]) : null;
+                  const d1 = v?.[1] ? new Date(v[1]) : null;
+                  updateFilter('dateRange', [d0, d1]);
+                }}
                 clearable
                 size="sm"
                 w={200}
@@ -314,7 +319,7 @@ export function LibraryView({ onDocumentSelect, onBulkAction }: LibraryViewProps
                     checked 
                     size="sm"
                     style={{ height: '28px' }}
-                    onRemove={() => updateFilter('courses', filters.courses.filter(c => c !== course))}
+                    onClick={() => updateFilter('courses', filters.courses.filter(c => c !== course))}
                   >
                     {courses.find(c => c.id === course)?.name}
                   </Chip>
@@ -325,7 +330,7 @@ export function LibraryView({ onDocumentSelect, onBulkAction }: LibraryViewProps
                     checked 
                     size="sm"
                     style={{ height: '28px' }}
-                    onRemove={() => updateFilter('types', filters.types.filter(t => t !== type))}
+                    onClick={() => updateFilter('types', filters.types.filter(t => t !== type))}
                   >
                     {documentTypeOptions.find(t => t.value === type)?.label}
                   </Chip>
@@ -336,7 +341,7 @@ export function LibraryView({ onDocumentSelect, onBulkAction }: LibraryViewProps
                     checked 
                     size="sm"
                     style={{ height: '28px' }}
-                    onRemove={() => updateFilter('tags', filters.tags.filter(t => t !== tag))}
+                    onClick={() => updateFilter('tags', filters.tags.filter(t => t !== tag))}
                   >
                     {tagOptions.find(t => t.value === tag)?.label}
                   </Chip>

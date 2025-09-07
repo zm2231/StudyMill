@@ -133,7 +133,7 @@ function getStatusColor(status: Document['status']): string {
 }
 
 export function DocumentCard({ 
-  document = mockDocument, 
+  document, 
   viewMode, 
   selected = false, 
   onSelect, 

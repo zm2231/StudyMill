@@ -404,12 +404,6 @@ export function AudioUpload({ opened, onClose, preselectedCourseId }: AudioUploa
               transition: 'all 0.2s ease',
               minHeight: 120
             }}
-            sx={{
-              '&:hover': {
-                borderColor: 'var(--mantine-color-forest-green-5)',
-                backgroundColor: 'var(--mantine-color-forest-green-1)'
-              }
-            }}
           >
             <input
               id="audio-file-input"
@@ -442,8 +436,8 @@ export function AudioUpload({ opened, onClose, preselectedCourseId }: AudioUploa
                 <Box 
                   key={index}
                   p="md" 
-                  withBorder
                   style={{ 
+                    border: '1px solid var(--mantine-color-gray-3)',
                     borderRadius: 8
                   }}
                 >

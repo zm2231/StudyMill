@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, Stack, Loader, Alert, Title, Group, Text, rem } from "@mantine/core";
 import { Calendar, dateFnsLocalizer, View } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay } from "date-fns";
-import enUS from "date-fns/locale/en-US";
+import { enUS } from "date-fns/locale/en-US";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { IconAlertTriangle, IconCalendar } from "@tabler/icons-react";
 import { getAssignmentsByWeek, type WeekBucket } from "@/lib/api/planner";

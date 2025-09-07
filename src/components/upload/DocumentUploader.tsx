@@ -254,7 +254,7 @@ export function DocumentUploader({
       clearInterval(progressInterval);
 
       if (response.ok) {
-        const json = await response.json().catch(() => ({} as any));
+        const json: any = await response.json().catch(() => ({}));
         const serverId = json?.documentId || json?.document?.id || null;
         setFiles(prev => prev.map(f => 
           f.id === uploadFile.id 
@@ -263,13 +263,13 @@ export function DocumentUploader({
         ));
         return serverId;
       } else {
-        const error = await response.json().catch(() => ({ message: 'Upload failed' }));
-        throw new Error(error.message || 'Upload failed');
+        const errorJson: any = await response.json().catch(() => ({ message: 'Upload failed' }));
+        throw new Error(errorJson?.message || 'Upload failed');
       }
-    } catch (error) {
+    } catch (error: unknown) {
       setFiles(prev => prev.map(f => 
         f.id === uploadFile.id 
-          ? { ...f, status: 'error', error: error instanceof Error ? error.message : 'Upload failed' } 
+          ? { ...f, status: 'error', error: (error as any)?.message ?? 'Upload failed' } 
           : f
       ));
       return null;

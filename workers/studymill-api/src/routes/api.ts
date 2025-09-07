@@ -63,17 +63,33 @@ coursesRoutes.get('/', async (c) => {
   
   // Get courses with real memory counts from database
   const coursesWithCounts = await courseService.getUserCoursesWithMemoryCounts(userId);
-  
-  // Transform courses to match frontend expectations
-  const transformedCourses = coursesWithCounts.map(course => ({
-    ...course,
-    schedule: [], // Empty schedule array until scheduling is implemented
-    semester: {
-      startDate: '2025-08-15',
-      endDate: '2025-12-15',
-      name: 'Fall 2025'
+
+  // Load semester records for any linked courses in one query
+  const semesterIds = Array.from(new Set(
+    coursesWithCounts.map((c: any) => c.semester_id).filter((id: string | null | undefined) => !!id)
+  ));
+  let semestersById: Record<string, { id: string; name: string; start_date: string; end_date: string }> = {};
+  if (semesterIds.length > 0) {
+    const placeholders = semesterIds.map(() => '?').join(',');
+    const rows = await c.env.DB.prepare(
+      `SELECT id, name, start_date, end_date FROM semesters WHERE user_id = ? AND id IN (${placeholders})`
+    ).bind(userId, ...semesterIds).all();
+    for (const row of (rows.results as any[]) || []) {
+      semestersById[row.id] = row;
     }
-    // memoryCount is now included from getUserCoursesWithMemoryCounts
+  }
+
+  // Transform courses to match frontend expectations and attach real semester data if present
+  const transformedCourses = coursesWithCounts.map((course: any) => ({
+    ...course,
+    schedule: [], // Placeholder until per-course scheduling is fully implemented
+    semester: course.semester_id && semestersById[course.semester_id]
+      ? {
+          startDate: semestersById[course.semester_id].start_date,
+          endDate: semestersById[course.semester_id].end_date,
+          name: semestersById[course.semester_id].name
+        }
+      : null
   }));
   
   return c.json({
@@ -89,8 +105,7 @@ coursesRoutes.post('/', async (c) => {
   const dbService = new DatabaseService(c.env.DB);
   const courseService = new CourseService(dbService);
   
-  // For now, extract basic fields and ignore complex schedule/semester data
-  // TODO: Implement full course creation with schedules
+  // For now, extract basic fields; schedule and semester handled separately later
   const basicCourseData = {
     name: courseData.name,
     description: courseData.description,
@@ -101,17 +116,25 @@ coursesRoutes.post('/', async (c) => {
   };
   
   const course = await courseService.createCourse(userId, basicCourseData);
+
+  // Try to attach real semester if the client provided a semester_id elsewhere (future extension)
+  let semesterData: any = null;
+  if ((course as any)?.semester_id) {
+    const sem = await new DatabaseService(c.env.DB).queryFirst(
+      'SELECT id, name, start_date, end_date FROM semesters WHERE id = ? AND user_id = ?',
+      [(course as any).semester_id, userId]
+    );
+    if (sem) {
+      semesterData = { startDate: sem.start_date, endDate: sem.end_date, name: sem.name };
+    }
+  }
   
   return c.json({
     success: true,
     course: {
       ...course,
       schedule: courseData.schedule || [],
-      semester: courseData.semester || {
-        startDate: '2025-08-15',
-        endDate: '2025-12-15',
-        name: 'Fall 2025'
-      },
+      semester: semesterData,
       memoryCount: 0
     }
   }, 201);
@@ -364,17 +387,29 @@ coursesRoutes.get('/:id', async (c) => {
   
   // Get real memory count for this specific course
   const memoryCount = await dbService.getMemoryCountByCourse(courseId, userId);
+
+  // Attach real semester when available
+  let semesterData: any = null;
+  if ((course as any)?.semester_id) {
+    const sem = await dbService.queryFirst(
+      'SELECT id, name, start_date, end_date FROM semesters WHERE id = ? AND user_id = ?',
+      [(course as any).semester_id, userId]
+    );
+    if (sem) {
+      semesterData = {
+        startDate: sem.start_date,
+        endDate: sem.end_date,
+        name: sem.name
+      };
+    }
+  }
   
   return c.json({
     success: true,
     course: {
       ...course,
-      schedule: [], // Empty schedule array until scheduling is implemented
-      semester: {
-        startDate: '2025-08-15',
-        endDate: '2025-12-15',
-        name: 'Fall 2025'
-      },
+      schedule: [], // Placeholder until per-course scheduling is fully implemented
+      semester: semesterData,
       memoryCount // Real memory count from database
     }
   });
@@ -418,7 +453,9 @@ const documentsRoutes = new Hono();
 // CANONICAL API: Enhanced upload endpoint with idempotency and dual-mode support
 documentsRoutes.post('/upload', async (c) => {
   const userId = c.get('userId');
-  const idempotencyKey = c.req.header('Idempotency-Key');
+  const idempotencyKey =
+    c.req.header('idempotency-key') ||
+    c.req.header('Idempotency-Key');
   
   if (!idempotencyKey) {
     createError('Idempotency-Key header is required', 400, ErrorCodes.VALIDATION_ERROR, { field: 'Idempotency-Key' });

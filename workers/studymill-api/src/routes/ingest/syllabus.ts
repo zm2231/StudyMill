@@ -235,11 +235,11 @@ async function extractTextFromPDFWithParseExtract(
   buffer: ArrayBuffer,
   fileName: string
 ): Promise<string> {
-  if (!env.temp_PARSE_EXTRACT_API_KEY) {
+  if (!env.PARSE_EXTRACT_API_KEY) {
     throw new Error('ParseExtract API key not configured');
   }
 
-  const service = new ParseExtractService(env.temp_PARSE_EXTRACT_API_KEY);
+  const service = new ParseExtractService(env.PARSE_EXTRACT_API_KEY);
   const result = await service.processDocument(buffer, 'application/pdf', fileName);
 
   if (!result.success || !result.data?.text) {
@@ -255,7 +255,7 @@ async function extractTextFromImageWithParseExtract(
   buffer: ArrayBuffer,
   mimeType: string
 ): Promise<string> {
-  if (!env.temp_PARSE_EXTRACT_API_KEY) {
+  if (!env.PARSE_EXTRACT_API_KEY) {
     throw new Error('ParseExtract API key not configured');
   }
 
@@ -266,7 +266,7 @@ async function extractTextFromImageWithParseExtract(
   const response = await fetch('https://api.parseextract.com/v1/ocr', {
     method: 'POST',
     headers: {
-'Authorization': `Bearer ${env.temp_PARSE_EXTRACT_API_KEY}`,
+      'Authorization': `Bearer ${env.PARSE_EXTRACT_API_KEY}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
@@ -291,11 +291,11 @@ async function extractTextFromDocWithParseExtract(
   fileName: string,
   mimeType: string
 ): Promise<string> {
-  if (!env.temp_PARSE_EXTRACT_API_KEY) {
+  if (!env.PARSE_EXTRACT_API_KEY) {
     throw new Error('ParseExtract API key not configured');
   }
 
-  const service = new ParseExtractService(env.temp_PARSE_EXTRACT_API_KEY);
+  const service = new ParseExtractService(env.PARSE_EXTRACT_API_KEY);
   const type = mimeType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   const result = await service.processDocument(buffer, type, fileName);
 
@@ -313,11 +313,11 @@ async function extractTextFromGenericWithParseExtract(
   fileName: string,
   mimeType: string
 ): Promise<string> {
-  if (!env.temp_PARSE_EXTRACT_API_KEY) {
+  if (!env.PARSE_EXTRACT_API_KEY) {
     throw new Error('ParseExtract API key not configured');
   }
 
-  const service = new ParseExtractService(env.temp_PARSE_EXTRACT_API_KEY);
+  const service = new ParseExtractService(env.PARSE_EXTRACT_API_KEY);
   const result = await service.processDocument(buffer, mimeType || 'application/octet-stream', fileName);
 
   if (!result.success || !result.data?.text) {

@@ -209,19 +209,18 @@ class ApiClient {
         }
       }
 
-      const data = await response.json() as Record<string, unknown>;
+      const data = (await response.json().catch(() => ({}))) as unknown;
 
       if (!response.ok) {
-        const errorData = data as ApiErrorData;
-        throw new ApiErrorClass(
-          errorData.code || 'API_ERROR',
-          errorData.message || 'An error occurred',
-          {
-            ...errorData.details,
-            requestId: errorData.requestId,
-            timestamp: errorData.timestamp
-          }
-        );
+        const e = data as Partial<ApiErrorData> | Record<string, unknown> | null;
+        const code = (e as any)?.code ?? 'API_ERROR';
+        const message = String((e as any)?.message ?? 'An error occurred');
+        const details = {
+          requestId: (e as any)?.requestId,
+          timestamp: (e as any)?.timestamp,
+          details: (e as any)?.details,
+        };
+        throw new ApiErrorClass(code as string, message, details);
       }
 
       return data as T;
@@ -774,19 +773,7 @@ class ApiClient {
     return this.request(`/api/v1/documents/${id}`);
   }
 
-  async uploadDocument(formData: FormData): Promise<{
-    success: boolean;
-    documentId?: string;
-    jobId?: string;
-    processingType: 'direct' | 'async';
-    estimatedTime?: number;
-    error?: string;
-  }> {
-    return this.request('/api/v1/documents/process', {
-      method: 'POST',
-      body: formData,
-    });
-  }
+  // Deprecated upload (replaced by canonical uploadDocument with progress monitoring)
 
   async getProcessingStatus(jobId: string): Promise<{
     success: boolean;
@@ -1242,7 +1229,7 @@ class ApiClient {
 
     const eventSource = new EventSource(`${this.baseUrl}/documents/${documentId}/stream`);
     
-    eventSource.onmessage = (event) => {
+    eventSource.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
         onProgress(data);
@@ -1251,7 +1238,7 @@ class ApiClient {
       }
     };
 
-    eventSource.addEventListener('progress', (event) => {
+    eventSource.addEventListener('progress', (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
         onProgress(data);
@@ -1260,7 +1247,7 @@ class ApiClient {
       }
     });
 
-    eventSource.addEventListener('done', (event) => {
+    eventSource.addEventListener('done', (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
         onProgress({ stage: 'done', percent: 100, ...data });
@@ -1270,17 +1257,10 @@ class ApiClient {
       }
     });
 
-    eventSource.addEventListener('error', (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        onProgress({ stage: 'error', percent: 0, error: data });
-        eventSource.close();
-      } catch (error) {
-        console.warn('SSE error:', error);
-        eventSource.close();
-        // Fallback to polling
-        this.pollUploadProgress(documentId, onProgress);
-      }
+    eventSource.addEventListener('error', () => {
+      // Close and fallback to polling on SSE error
+      try { eventSource.close(); } catch {}
+      this.pollUploadProgress(documentId, onProgress);
     });
 
     eventSource.onerror = () => {
@@ -1328,30 +1308,7 @@ class ApiClient {
     }>(`/documents/${documentId}/status`);
   }
 
-  // Today's classes methods
-  async getTodaysClasses() {
-    return this.request<{
-      success: boolean;
-      classes: Array<{
-        id: string;
-        courseId: string;
-        courseName: string;
-        courseCode: string;
-        startTime: string;
-        endTime: string;
-        location: string;
-        color: string;
-        type: string;
-      }>;
-      today?: {
-        date: string;
-        dayOfWeek: number;
-        dayName: string;
-      };
-      message?: string;
-      error?: string;
-    }>('/api/v1/courses/today');
-  }
+  // Today's classes methods (defined earlier in this client)
 
   // Course schedule management
   async updateCourseSchedule(courseId: string, schedules: Array<{
@@ -1595,21 +1552,17 @@ class ApiClient {
       return null;
     }
 
-    const token = localStorage.getItem('access_token');
+    const token = localStorage.getItem('access_token') || this.accessToken;
     if (!token) {
       console.error('No access token available for WebSocket connection');
       return null;
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${this.baseUrl.replace(/^https?:\/\//, '')}/api/v1/chat/ws?sessionId=${sessionId}`;
+    const wsUrl = `${protocol}//${this.baseUrl.replace(/^https?:\/\//, '')}/api/v1/chat/ws?sessionId=${encodeURIComponent(sessionId)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
     
     try {
-      const ws = new WebSocket(wsUrl, [], {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      } as any);
+      const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
         console.log('Chat WebSocket connected');
@@ -1641,41 +1594,7 @@ class ApiClient {
     }
   }
 
-  /**
-   * Logout current session
-   */
-  async logout(): Promise<void> {
-    try {
-      // Call logout endpoint to invalidate server-side session
-      await this.request('/api/v1/auth/logout', {
-        method: 'POST'
-      });
-    } catch (error) {
-      // Even if server logout fails, we should clear local tokens
-      console.warn('Server logout failed:', error);
-    } finally {
-      // Always clear local tokens
-      this.clearTokens();
-    }
-  }
-
-  /**
-   * Logout all sessions for this user
-   */
-  async logoutAll(): Promise<void> {
-    try {
-      // Call logout all endpoint to invalidate all server-side sessions
-      await this.request('/api/v1/auth/logout-all', {
-        method: 'POST'
-      });
-    } catch (error) {
-      // Even if server logout fails, we should clear local tokens
-      console.warn('Server logout all failed:', error);
-    } finally {
-      // Always clear local tokens
-      this.clearTokens();
-    }
-  }
+  // Duplicated logout methods removed (see earlier definitions)
 
 }
 

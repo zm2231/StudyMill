@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { Container, Title, Text, Paper, Stack, Group, Select, TextInput, Button, Alert, Card, Divider } from '@mantine/core';
@@ -19,25 +19,14 @@ export default function CreateCourseByCRNPage() {
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [syllabusModal, setSyllabusModal] = useState<{ open: boolean; courseId?: string; courseName?: string }>({ open: false });
-  const [semesters, setSemesters] = useState<Array<{ id: string; name: string }>>([]);
-  const [semesterId, setSemesterId] = useState<string | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { apiClient } = await import('@/lib/api');
-        const res = await apiClient.request<{ semesters: Array<{ id: string; name: string }> }>(`/api/v1/semesters`);
-        setSemesters(res.semesters || []);
-      } catch {}
-    })();
-  }, []);
+  // Semester assignment now auto-detected on the server by term_code; no manual selection needed.
 
   const lookup = async () => {
     setError(null);
     setPreview(null);
     try {
       const { apiClient } = await import('@/lib/api');
-      const res = await apiClient.request(`/api/v1/crn/lookup?term_code=${termCode}&crn=${encodeURIComponent(crn)}`);
+      const res = await apiClient.request<{ success: boolean; course_preview?: any; error?: string }>(`/api/v1/crn/lookup?term_code=${termCode}&crn=${encodeURIComponent(crn)}`);
       setPreview(res.course_preview);
     } catch (e: any) {
       setError(e?.message || 'Lookup failed');
@@ -49,12 +38,16 @@ export default function CreateCourseByCRNPage() {
     setError(null);
     try {
       const { apiClient } = await import('@/lib/api');
-      const res = await apiClient.request(`/api/v1/crn/create-course`, {
+      const res = await apiClient.request<{ success: boolean; course?: { id: string; code: string; name: string } }>(`/api/v1/crn/create-course`, {
         method: 'POST',
-        body: { term_code: termCode, crn, semester_id: semesterId || undefined }
+        body: JSON.stringify({ term_code: termCode, crn })
       });
-      const course = res.course;
-      setSyllabusModal({ open: true, courseId: course.id, courseName: `${course.code} - ${course.name}` });
+      if (res && res.success && res.course) {
+        const course = res.course as { id: string; code: string; name: string };
+        setSyllabusModal({ open: true, courseId: course.id, courseName: `${course.code} - ${course.name}` });
+      } else {
+        throw new Error('Invalid response from server - missing course data');
+      }
     } catch (e: any) {
       setError(e?.message || 'Create failed');
     } finally {
@@ -75,16 +68,6 @@ export default function CreateCourseByCRNPage() {
                 <Group grow>
                   <Select label="Term" data={TERM_OPTIONS} value={termCode} onChange={(v) => setTermCode(v || '')} />
                   <TextInput label="CRN" placeholder="5-digit CRN" value={crn} onChange={(e) => setCrn(e.currentTarget.value)} />
-                </Group>
-                <Group grow>
-                  <Select
-                    label="Assign to Semester (optional)"
-                    placeholder="Select a semester"
-                    data={semesters.map(s => ({ value: s.id, label: s.name }))}
-                    value={semesterId}
-                    onChange={(v) => setSemesterId(v)}
-                    clearable
-                  />
                 </Group>
                 <Group>
                   <Button onClick={lookup} disabled={!crn || crn.length !== 5}>Preview</Button>

@@ -321,10 +321,10 @@ app.get('/academic-dates/:semesterId',
         return c.json({ error: 'Unauthorized' }, 401);
       }
 
-      // Verify user owns this semester and fetch its date range
+      // Verify user owns this semester and fetch its date range and name (for term_code inference)
       const semester = await c.env.DB.prepare(
-        'SELECT id, start_date, end_date FROM semesters WHERE id = ? AND user_id = ?'
-      ).bind(semesterId, userId).first<{ id: string; start_date: string; end_date: string }>();
+        'SELECT id, name, start_date, end_date FROM semesters WHERE id = ? AND user_id = ?'
+      ).bind(semesterId, userId).first<{ id: string; name: string; start_date: string; end_date: string }>();
 
       if (!semester) {
         return c.json({ error: 'Semester not found' }, 404);
@@ -335,13 +335,26 @@ app.get('/academic-dates/:semesterId',
         'SELECT week_number, start_date, end_date FROM course_weeks WHERE semester_id = ? ORDER BY week_number ASC'
       ).bind(semesterId).all<{ week_number: number; start_date: string; end_date: string }>();
 
-      // Fetch academic dates within semester range
+      // Infer term_code from semester name when possible (e.g., "Fall 2025" -> 202508)
+      let inferredTermCode: string | null = null;
+      try {
+        const lower = (semester.name || '').toLowerCase();
+        const yearMatch = semester.name?.match(/(\d{4})/);
+        const year = yearMatch ? yearMatch[1] : null;
+        if (year) {
+          if (lower.includes('fall')) inferredTermCode = `${year}08`;
+          else if (lower.includes('spring')) inferredTermCode = `${year}01`;
+          else if (lower.includes('summer')) inferredTermCode = `${year}05`;
+        }
+      } catch {}
+
+      // Fetch academic dates within semester range OR by inferred term_code
       const dates = await c.env.DB.prepare(
         `SELECT id, term_code, date, name, category, campus, notes
          FROM academic_calendar_dates
-         WHERE date BETWEEN ? AND ?
+         WHERE (date BETWEEN ? AND ?) OR (term_code = ?)
          ORDER BY date ASC`
-      ).bind(semester.start_date, semester.end_date).all<{
+      ).bind(semester.start_date, semester.end_date, inferredTermCode).all<{
         id: string; term_code: string; date: string; name: string; category: string | null; campus: string | null; notes: string | null;
       }>();
 

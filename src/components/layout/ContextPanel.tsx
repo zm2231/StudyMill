@@ -102,7 +102,14 @@ const RelatedTabContent = () => (
 
 const QuickActionsTabContent = ({ contextId, contextType }: { contextId?: string; contextType?: string }) => {
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
-  const [results, setResults] = useState<Record<string, unknown>>({});
+  interface SummaryResult { summary: string; wordCount: number; confidence: number }
+  interface StudyGuideResult { title: string; sections: any[] }
+  interface FlashcardsResult { cards: Array<{ front: string; back: string }> }
+  const [results, setResults] = useState<{
+    summary?: SummaryResult;
+    studyGuide?: StudyGuideResult;
+    flashcards?: FlashcardsResult;
+  }>({});
 
   const handleAction = async (action: 'summarize' | 'study-guide' | 'flashcards') => {
     if (!contextId || contextType !== 'document') {
@@ -117,11 +124,11 @@ const QuickActionsTabContent = ({ contextId, contextType }: { contextId?: string
     setLoadingStates(prev => ({ ...prev, [action]: true }));
     
     try {
-      let result;
+      let result: any;
       switch (action) {
         case 'summarize':
           result = await apiClient.summarizeDocument(contextId);
-          setResults(prev => ({ ...prev, summary: result }));
+          setResults(prev => ({ ...prev, summary: result as SummaryResult }));
           notifications.show({
             title: 'Summary Generated',
             message: `Generated summary with ${result.wordCount} words`,
@@ -130,7 +137,7 @@ const QuickActionsTabContent = ({ contextId, contextType }: { contextId?: string
           break;
         case 'study-guide':
           result = await apiClient.createStudyGuide({ documentIds: [contextId] });
-          setResults(prev => ({ ...prev, studyGuide: result }));
+          setResults(prev => ({ ...prev, studyGuide: result as StudyGuideResult }));
           notifications.show({
             title: 'Study Guide Created',
             message: `Generated ${result.sections.length} sections`,
@@ -139,7 +146,7 @@ const QuickActionsTabContent = ({ contextId, contextType }: { contextId?: string
           break;
         case 'flashcards':
           result = await apiClient.generateFlashcards(contextId, { count: 10 });
-          setResults(prev => ({ ...prev, flashcards: result }));
+          setResults(prev => ({ ...prev, flashcards: result as FlashcardsResult }));
           notifications.show({
             title: 'Flashcards Generated',
             message: `Created ${result.cards.length} flashcards`,

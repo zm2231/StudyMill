@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useApi } from '@/lib/api';
-import { Card, Stack, Group, Text, Button, Badge, Loader, Textarea, Select, NumberInput, Checkbox, Modal } from '@mantine/core';
+import { Card, Stack, Group, Text, Button, Badge, Loader, Textarea, Select, NumberInput, Checkbox, Modal, TextInput } from '@mantine/core';
 import { IconSparkles, IconCheck, IconX } from '@tabler/icons-react';
 
 export function GenerateWizard({
@@ -99,7 +99,14 @@ export function GenerateWizard({
         />
 
         <Group>
-          <NumberInput label="Count" value={count} onChange={setCount} min={1} max={100} style={{ flex: 1 }} />
+          <NumberInput 
+            label="Count" 
+            value={count} 
+            onChange={(v) => setCount(typeof v === 'number' ? v : v === '' ? '' : Number(v))} 
+            min={1} 
+            max={100} 
+            style={{ flex: 1 }} 
+          />
           <Select
             label="Difficulty"
             data={[{ value: 'easy', label: 'Easy' }, { value: 'medium', label: 'Medium' }, { value: 'hard', label: 'Hard' }]}
@@ -152,4 +159,3 @@ export function GenerateWizard({
     </Modal>
   );
 }
-

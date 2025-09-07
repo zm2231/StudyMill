@@ -36,7 +36,7 @@ import { useRouter } from 'next/navigation';
 import { LibraryContent } from './LibraryContent';
 import { DocumentUpload } from './DocumentUpload';
 import { AudioUpload } from './AudioUpload';
-import { TodaysClasses } from '../dashboard/TodaysClasses';
+import { WeeklySchedule } from '../dashboard/TodaysClasses';
 import { CourseCreation } from '../courses/CourseCreation';
 import { CourseNavItem, CourseSelection } from '@/types/library';
 import { useCoursesWithSWR } from '@/hooks/useCoursesWithSWR';
@@ -317,7 +317,7 @@ export function LibraryLayout() {
         {/* Main Content */}
         {selectedCourse === 'overview' ? (
           <Stack gap="lg">
-            <TodaysClasses 
+            <WeeklySchedule 
               onOpenAudioUpload={handleOpenAudioUpload}
               onOpenDocumentUpload={handleOpenDocumentUpload}
             />

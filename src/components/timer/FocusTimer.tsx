@@ -216,7 +216,7 @@ export function FocusTimer({ variant = 'full', onMinimize, onClose }: FocusTimer
             radius="xl"
             style={{ width: '100%' }}
             striped
-            animate={timerState.isRunning}
+            animated={timerState.isRunning}
           />
         </Stack>
 

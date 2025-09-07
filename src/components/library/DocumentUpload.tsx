@@ -261,12 +261,6 @@ export function DocumentUpload({ opened, onClose, preselectedCourseId }: Documen
               backgroundColor: '#ffffff',
               transition: 'all 0.2s ease'
             }}
-            sx={{
-              '&:hover': {
-                borderColor: '#3b82f6',
-                backgroundColor: '#f8fafc'
-              }
-            }}
           >
             <input
               id="document-file-input"

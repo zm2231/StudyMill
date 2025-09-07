@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useApi } from '@/lib/api';
+import { useApi, apiClient } from '@/lib/api';
 
 export interface Memory {
   id: string;

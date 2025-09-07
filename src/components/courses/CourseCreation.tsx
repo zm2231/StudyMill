@@ -53,7 +53,8 @@ interface CourseCreationProps {
   opened: boolean;
   onClose: () => void;
   editMode?: boolean;
-  initialData?: Course; // For edit functionality
+  // Accept a broader shape for edit data to avoid strict coupling
+  initialData?: any; // For edit functionality
   onSuccess?: () => void; // Called after successful course creation
 }
 
@@ -218,6 +219,7 @@ export function CourseCreation({ opened, onClose, editMode, initialData, onSucce
       instructor: '',
       credits: 3,
       schedule: [],
+      semester_id: '',
       semester: {
         startDate: '',
         endDate: '',
@@ -465,7 +467,7 @@ export function CourseCreation({ opened, onClose, editMode, initialData, onSucce
             <Stack gap="xs">
               <Text size="sm" fw={500}>Current Schedule:</Text>
               {formData.schedule.map((slot, index) => (
-                <Group key={index} justify="space-between" p="sm" withBorder style={{ 
+                <Group key={index} justify="space-between" p="sm" style={{ 
                   backgroundColor: 'var(--mantine-color-gray-0)',
                   borderRadius: 6
                 }}>

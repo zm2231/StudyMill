@@ -82,8 +82,7 @@ export function useCoursesWithSWR() {
         semester: data.semester,
         memoryCount: 0,
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        user_id: '' // Will be set by backend
+        updated_at: new Date().toISOString()
       };
 
       // Update cache optimistically

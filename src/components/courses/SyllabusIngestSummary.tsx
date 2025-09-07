@@ -103,15 +103,18 @@ export function SyllabusIngestSummary({
 
     try {
       const { apiClient } = await import('@/lib/api');
-      const result = await apiClient.request('/api/v1/ingest/syllabus', {
-        method: 'POST',
-        body: {
-          course_id: courseId,
-          syllabus_document_id: syllabusDocumentId,
-          schedule_document_id: scheduleDocumentId,
-          use_parseextract_for_images: true
+      const result = await apiClient.request<{ data: ParsedSyllabusData }>(
+        '/api/v1/ingest/syllabus',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            course_id: courseId,
+            syllabus_document_id: syllabusDocumentId,
+            schedule_document_id: scheduleDocumentId,
+            use_parseextract_for_images: true
+          })
         }
-      });
+      );
       setParsedData(result.data);
       setStep('review');
     } catch (err) {

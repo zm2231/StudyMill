@@ -14,7 +14,7 @@ import {
   Stack,
   Text
 } from '@mantine/core';
-import { IconSave, IconTrash, IconEdit } from '@tabler/icons-react';
+import { IconCheck, IconTrash, IconEdit } from '@tabler/icons-react';
 
 interface NotesEditorProps {
   noteId?: string;
@@ -228,7 +228,7 @@ export function NotesEditor({
           {isEditing ? (
             <Button
               size="sm"
-              leftSection={<IconSave size={16} />}
+              leftSection={<IconCheck size={16} />}
               onClick={saveNote}
               loading={isSaving}
               disabled={!title.trim()}

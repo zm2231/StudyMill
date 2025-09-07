@@ -131,7 +131,7 @@ export function UploadDocumentsModal({
     transcription: string;
     memoriesCreated: number;
   }[]>([]);
-  const abortControllerRef = useRef<AbortController>();
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Load courses on mount
   useEffect(() => {
@@ -267,31 +267,32 @@ export function UploadDocumentsModal({
             }
 
             // For audio files, store transcription results and show completion notification
-            if (isAudioFile && response.transcription) {
+            if (isAudioFile && (response as any).transcription) {
               setTranscriptionResults(prev => [...prev, {
                 documentId: response.documentId,
                 filename: uploadFile.file.name,
-                transcription: response.transcription,
-                memoriesCreated: response.memoriesCreated || 0
+                transcription: (response as any).transcription,
+                memoriesCreated: (response as any).memoriesCreated || 0
               }]);
               
               notifications.update({
                 id: `upload-${uploadFile.id}`,
                 title: 'Audio Transcribed!',
-                message: `Transcript ready with ${response.memoriesCreated || 0} memories created`,
+                message: `Transcript ready with ${(response as any).memoriesCreated || 0} memories created`,
                 color: 'green',
                 loading: false,
                 autoClose: 5000
               });
             }
           } else {
-            throw new Error(response.error || 'Upload failed');
+            const msg = (response as any)?.error || 'Upload failed';
+            throw new Error(msg);
           }
         } catch (error: unknown) {
           console.error('Upload failed for file:', uploadFile.file.name, error);
           setFiles(prev => prev.map(f => 
             f.id === uploadFile.id 
-              ? { ...f, status: 'error' as const, error: error.message }
+              ? { ...f, status: 'error' as const, error: (error as any)?.message || 'Upload failed' }
               : f
           ));
         }
@@ -313,12 +314,12 @@ export function UploadDocumentsModal({
       console.error('Upload process failed:', error);
       notifications.show({
         title: 'Upload Failed',
-        message: error.message || 'Failed to upload documents',
+        message: (error as any)?.message || 'Failed to upload documents',
         color: 'red'
       });
     } finally {
       setUploading(false);
-      abortControllerRef.current = undefined;
+      abortControllerRef.current = null;
     }
   };
 

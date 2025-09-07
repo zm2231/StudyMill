@@ -60,7 +60,7 @@ export function PersistentAudioRecorder({ onClose }: PersistentAudioRecorderProp
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
   const [recordingTitle, setRecordingTitle] = useState('');
   
-  const { data: courses = [] } = useCoursesWithSWR();
+  const { courses = [] } = useCoursesWithSWR() as { courses: Array<{ id: string; name: string }>; };
 
   // Auto-show setup modal when first opening
   useEffect(() => {
@@ -418,7 +418,7 @@ export function PersistentAudioRecorder({ onClose }: PersistentAudioRecorderProp
             label: course.name
           }))}
           value={selectedCourseId}
-          onChange={setSelectedCourseId}
+          onChange={(v) => setSelectedCourseId(v || '')}
           clearable
         />
         

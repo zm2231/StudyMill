@@ -77,7 +77,7 @@ export function DocumentViewer({
 
   const handleDownload = () => {
     if (document.fileUrl) {
-      const link = document.createElement('a');
+      const link = window.document.createElement('a');
       link.href = document.fileUrl;
       link.download = document.title;
       link.click();
@@ -160,10 +160,6 @@ export function DocumentViewer({
           defaultSizes={splitSizes}
           onChange={handleSplitChange}
           minSize={280}
-          style={{
-            height: '100%',
-            '--separator-border': '1px solid var(--mantine-color-gray-3)',
-          }}
         >
           {/* Document Content */}
           <Allotment.Pane minSize={480}>
