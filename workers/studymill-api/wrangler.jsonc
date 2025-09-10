@@ -18,6 +18,12 @@
 		"mode": "smart" 
 	},
 	
+	"vars": {
+		"AI_GATEWAY_OPENAI_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/openai",
+		"AI_GATEWAY_GOOGLE_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/gemini",
+		"AI_GATEWAY_OPENROUTER_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/openrouter"
+	},
+	
 	// Environment-specific configurations
 	"env": {
 		"development": {
@@ -64,7 +70,10 @@
 				"ENVIRONMENT": "staging",
 				"API_VERSION": "v1.0.0-staging",
 				"FRONTEND_URL": "https://staging.studymill.ai",
-				"USE_HYBRID_PROCESSING": "true"
+				"USE_HYBRID_PROCESSING": "true",
+				"AI_GATEWAY_OPENAI_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/openai",
+				"AI_GATEWAY_GOOGLE_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/gemini",
+				"AI_GATEWAY_OPENROUTER_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/openrouter"
 			},
 			"d1_databases": [
 				{
@@ -103,7 +112,10 @@
 				"ENVIRONMENT": "production",
 				"API_VERSION": "v1.0.0",
 				"FRONTEND_URL": "https://studymill.ai",
-				"USE_HYBRID_PROCESSING": "true"
+				"USE_HYBRID_PROCESSING": "true",
+				"AI_GATEWAY_OPENAI_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/openai",
+				"AI_GATEWAY_GOOGLE_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/gemini",
+				"AI_GATEWAY_OPENROUTER_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/openrouter"
 			},
 			"d1_databases": [
 				{

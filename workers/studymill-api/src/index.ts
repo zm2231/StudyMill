@@ -35,6 +35,26 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
+// Dev-only: warn if critical tables are missing (surface missing migrations early)
+let __devTableCheckDone = false;
+app.use('*', async (c, next) => {
+  try {
+    if (!__devTableCheckDone && c.env?.ENVIRONMENT === 'development') {
+      // Check for user_ai_preferences table presence
+      const row = await c.env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='user_ai_preferences'"
+      ).first();
+      if (!row) {
+        console.warn('[DEV] D1 table missing: user_ai_preferences. Run Phase 0 migration: migrations/20250910_user_ai_preferences.sql');
+      }
+      __devTableCheckDone = true;
+    }
+  } catch (e) {
+    // Non-fatal; continue
+  }
+  return next();
+});
+
 // Global middleware - Order matters for security
 app.use('*', logger());
 
