@@ -13,9 +13,14 @@ declare global {
     OPENROUTER_API_KEY?: string;
 
     // AI Gateway base URLs (vars)
-    AI_GATEWAY_OPENAI_BASE_URL?: string;
-    AI_GATEWAY_GOOGLE_BASE_URL?: string;
-    AI_GATEWAY_OPENROUTER_BASE_URL?: string;
+    AI_GATEWAY_COMPAT_BASE_URL?: string;
+    // Dynamic routing flags
+    AI_GATEWAY_DYNAMIC_ENABLE?: string; // '1' to enable
+    AI_GATEWAY_DYNAMIC_ROUTE?: string; // route name, e.g. 'gemini' or 'default'
+
+    // Diagnostics
+    DIAGNOSTICS_TOKEN?: string;
+    DIAGNOSTICS_ENABLE?: string; // '1' to enable in prod
   }
 }
 

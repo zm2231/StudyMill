@@ -57,6 +57,12 @@ export function ChatInterface({
   assignmentContext,
   courseId
 }: ChatInterfaceProps) {
+  if (process.env.NEXT_PUBLIC_CHAT_HTTP === '1') {
+    try {
+      console.warn('[ChatInterface(WS)] disabled by NEXT_PUBLIC_CHAT_HTTP=1');
+    } catch {}
+    return null;
+  }
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();

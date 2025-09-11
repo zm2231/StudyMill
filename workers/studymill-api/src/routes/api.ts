@@ -22,6 +22,11 @@ import { semestersRouter } from './semesters';
 import { tagsRouter } from './tags';
 import { syllabusRouter } from './ingest/syllabus';
 import { gradesRouter } from './grades';
+import { registerChatRoutes } from './api.chat';
+import { registerBranchRoutes } from './api.branch';
+import { registerShareRoutes } from './api.share';
+import { diagnosticsRoutes } from './api.diagnostics';
+import { diagnosticsGatewayRoutes } from './api.diagnostics-gateway';
 
 export const apiRoutes = new Hono();
 
@@ -41,17 +46,27 @@ publicDocumentsRoutes.get('/supported-types', async (c) => {
 });
 apiRoutes.route('/documents', publicDocumentsRoutes);
 
-// Apply authentication middleware to all other API routes (except WebSocket endpoints)
+// Apply authentication middleware to all other API routes (except WebSocket & diagnostics endpoints)
 apiRoutes.use('*', async (c, next) => {
   const url = new URL(c.req.url);
-  
-  // Skip auth for WebSocket endpoints
-  if (url.pathname.includes('/chat/ws')) {
+  const path = url.pathname;
+
+  // Skip auth for WebSocket endpoints and diagnostics endpoints
+  if (path.includes('/chat/ws') || path.includes('/diagnostics')) {
     return next();
   }
   
   return authMiddleware(c, next);
 });
+
+// Chat routes (HTTP streaming)
+registerChatRoutes(apiRoutes);
+registerBranchRoutes(apiRoutes);
+registerShareRoutes(apiRoutes);
+
+// Diagnostics (guarded)
+apiRoutes.route('/diagnostics', diagnosticsRoutes);
+apiRoutes.route('/diagnostics', diagnosticsGatewayRoutes);
 
 // Courses routes
 const coursesRoutes = new Hono();
@@ -1187,7 +1202,7 @@ documentsRoutes.get('/:id/health-report', async (c) => {
 const chatRoutes = new Hono();
 
 // WebSocket chat endpoint
-chatRoutes.get('/ws', async (c) => {
+apiRoutes.get('/chat/ws', async (c) => {
   const upgrade = c.req.header('Upgrade');
   
   if (upgrade !== 'websocket') {

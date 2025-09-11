@@ -150,6 +150,19 @@ app.use('/chat/*', async (c, next) => {
   return c.redirect(redirected, 308);
 });
 
+// Provide non-versioned /api/chat -> /api/v1/chat redirect for Phase 1 rollout
+app.use('/api/chat/*', async (c) => {
+  const url = new URL(c.req.url);
+  const redirected = `/api/v1${url.pathname.substring(4)}${url.search}`; // strip '/api'
+  try {
+    const ts = new Date().toISOString();
+    console.log(
+      JSON.stringify({ event: 'api_chat_redirect', ts, from: url.pathname, to: redirected })
+    );
+  } catch {}
+  return c.redirect(redirected, 308);
+});
+
 // API routes
 app.route('/auth', authRoutes);
 app.route('/api/v1', apiRoutes);

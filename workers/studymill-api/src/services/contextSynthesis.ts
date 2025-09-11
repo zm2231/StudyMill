@@ -560,6 +560,52 @@ Response:`;
   }
 }
 
+// Phase 1: lightweight static utility for chat context synthesis from attachments
+export async function getContextForDocuments(params: {
+  userId: string;
+  attachments?: string[]; // document IDs
+  db: D1Database;
+  topK?: number;
+}): Promise<{ contextStr: string; sources: Array<{ id: string; title: string; snippet: string }> }> {
+  const { userId, attachments = [], db, topK = 8 } = params;
+  if (!attachments || attachments.length === 0) {
+    return { contextStr: '', sources: [] };
+  }
+
+  // Build placeholders for IN clause
+  const placeholders = attachments.map(() => '?').join(',');
+  const sql = `
+    SELECT 
+      e.id as chunk_id,
+      e.document_id,
+      e.chunk_text,
+      e.page_number,
+      e.chunk_index,
+      d.title as document_title
+    FROM document_embeddings e
+    JOIN documents d ON d.id = e.document_id
+    WHERE e.document_id IN (${placeholders})
+      AND d.user_id = ?
+    ORDER BY COALESCE(e.page_number, 999999), COALESCE(e.chunk_index, 999999)
+    LIMIT ?
+  `;
+  const bind = [...attachments, userId, topK];
+  const res = await db.prepare(sql).bind(...bind).all();
+  const rows = (res.results as any[]) || [];
+
+  const sources = rows.map((r) => ({
+    id: r.document_id,
+    title: r.document_title || r.document_id,
+    snippet: String(r.chunk_text || '').slice(0, 240)
+  }));
+
+  const contextStr = rows
+    .map((r) => `[${r.document_title || r.document_id}] ${String(r.chunk_text || '')}`)
+    .join('\n\n');
+
+  return { contextStr, sources };
+}
+
 // Supporting interfaces
 interface RetrievedContent {
   id: string;

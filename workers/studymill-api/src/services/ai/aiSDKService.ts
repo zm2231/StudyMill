@@ -1,26 +1,19 @@
 import { streamText, streamObject as aiStreamObject } from 'ai';
 import { z } from 'zod';
 import { createProviderClient, defaultModelFor, ProviderName } from './providers';
-import { deriveAesGcmKey, decryptString, parseEnvelopeV1 } from '../../utils/crypto';
 
-function gatewayBaseURL(p: ProviderName, env: Bindings, useGateway: boolean) {
+function compatBaseURL(env: Bindings, useGateway: boolean) {
   if (!useGateway) return undefined;
-  if (p === 'openai') return env.AI_GATEWAY_OPENAI_BASE_URL;
-  if (p === 'google') return env.AI_GATEWAY_GOOGLE_BASE_URL;
-  if (p === 'openrouter') return env.AI_GATEWAY_OPENROUTER_BASE_URL;
+  return env.AI_GATEWAY_COMPAT_BASE_URL;
 }
 
 async function loadPrefs(userId: string, db: D1Database) {
-  return await db.prepare(
-    "SELECT default_provider, use_gateway, keys_json, salt_b64u, key_id, envelope_ver, kdf_alg, enc_alg, provider_models FROM user_ai_preferences WHERE user_id=?1"
-  ).bind(userId).first();
-}
-
-async function decryptIfAny(envelope?: string, master_b64u?: string) {
-  if (!envelope || !master_b64u) return undefined;
-  const e = parseEnvelopeV1(envelope);
-  const k = await deriveAesGcmKey(master_b64u, e.salt_b64u);
-  return decryptString({ iv_b64u: e.iv_b64u, ct_b64u: e.ct_b64u }, k);
+  return await db
+    .prepare(
+      "SELECT default_provider, use_gateway, provider_models FROM user_ai_preferences WHERE user_id=?1"
+    )
+    .bind(userId)
+    .first();
 }
 
 export async function resolveUserAIConfig(userId: string, db: D1Database, env: Bindings) {
@@ -28,21 +21,16 @@ export async function resolveUserAIConfig(userId: string, db: D1Database, env: B
   const cfg = {
     provider: 'google' as ProviderName,
     useGateway: true,
-    apiKeys: {} as Record<string, string>,
+    useDynamic: (env.AI_GATEWAY_DYNAMIC_ENABLE === '1'),
+    dynamicRoute: env.AI_GATEWAY_DYNAMIC_ROUTE || 'gemini',
     models: {} as Record<string, string | undefined>,
     baseURLs: {} as Record<string, string | undefined>,
     fallbackWorkersAIModel: '@cf/meta/llama-3.1-70b-instruct-fp8-fast'
-  };
+  } as any;
 
   cfg.models.google = defaultModelFor('google');
   cfg.models.openai = defaultModelFor('openai');
   cfg.models.openrouter = defaultModelFor('openrouter');
-
-  // service-level fallbacks
-  const googleKey = env.GEMINI_API_KEY || env.GOOGLE_API_KEY;
-  if (googleKey) cfg.apiKeys.google = googleKey;
-  if (env.OPENAI_API_KEY) cfg.apiKeys.openai = env.OPENAI_API_KEY;
-  if (env.OPENROUTER_API_KEY) cfg.apiKeys.openrouter = env.OPENROUTER_API_KEY;
 
   if (row) {
     cfg.provider = (row.default_provider || 'google') as ProviderName;
@@ -56,20 +44,12 @@ export async function resolveUserAIConfig(userId: string, db: D1Database, env: B
         if (pm.openrouter) cfg.models.openrouter = pm.openrouter;
       } catch {}
     }
-
-    const master = env.AI_PREFS_MASTER_KEY;
-    const map = row.keys_json ? (() => { try { return JSON.parse(row.keys_json); } catch { return {}; } })() : {};
-    const g = await decryptIfAny(map.google, master);
-    const o = await decryptIfAny(map.openai, master);
-    const r = await decryptIfAny(map.openrouter, master);
-    if (g) cfg.apiKeys.google = g;
-    if (o) cfg.apiKeys.openai = o;
-    if (r) cfg.apiKeys.openrouter = r;
   }
 
-  cfg.baseURLs.openai = gatewayBaseURL('openai', env, cfg.useGateway);
-  cfg.baseURLs.google = gatewayBaseURL('google', env, cfg.useGateway);
-  cfg.baseURLs.openrouter = gatewayBaseURL('openrouter', env, cfg.useGateway);
+  // Using compat for chat: single base URL
+  cfg.baseURLs.openai = compatBaseURL(env, cfg.useGateway);
+  cfg.baseURLs.google = compatBaseURL(env, cfg.useGateway);
+  cfg.baseURLs.openrouter = compatBaseURL(env, cfg.useGateway);
   return cfg;
 }
 
@@ -87,22 +67,115 @@ export async function streamChat(params: {
   const cfg = await resolveUserAIConfig(userId, db, env);
   const provider = providerOverride || cfg.provider;
 
-  const baseURL = provider === 'google' ? cfg.baseURLs.google : provider === 'openai' ? cfg.baseURLs.openai : cfg.baseURLs.openrouter;
-  if (!baseURL) throw new Error('Missing Gateway baseURL for provider ' + provider);
+  const baseURL = cfg.baseURLs.openai; // compat base for all
+  if (!baseURL) throw new Error('Missing Gateway compat baseURL');
   if (!env.AI_GATEWAY_TOKEN) throw new Error('Missing AI_GATEWAY_TOKEN for authenticated Gateway');
   const client = createProviderClient({ provider, baseURL, gatewayToken: env.AI_GATEWAY_TOKEN });
 
-  const modelName = modelOverride || (provider === 'google' ? cfg.models.google : provider === 'openai' ? cfg.models.openai : cfg.models.openrouter);
-  if (provider === 'openrouter' && !modelName) throw new Error('openrouter requires explicit model');
+  const modelParam = (() => {
+    if ((cfg as any).useDynamic) {
+      const route = modelOverride || `dynamic/${(cfg as any).dynamicRoute}`;
+      return route as string;
+    }
+    const bare = modelOverride || (provider === 'google' ? cfg.models.google : provider === 'openai' ? cfg.models.openai : cfg.models.openrouter);
+    if (provider === 'openrouter' && !bare) throw new Error('openrouter requires explicit model');
+    const providerSegment = provider === 'google' ? 'google-vertex-ai' : provider === 'openai' ? 'openai' : 'openrouter';
+    return `${providerSegment}/${bare as string}`;
+  })();
 
-  const model = client.getModel(modelName as string);
+  const model = client.getModel(modelParam);
 
   const core: any[] = [];
   if (system) core.push({ role: 'system', content: system });
   core.push(...(messages || []));
 
   const result = await streamText({ model, messages: core, signal });
-  return { textStream: result.textStream, toReadableStream: result.toReadableStream };
+  return result as any;
+}
+
+export async function toSSEStream(
+  result: any,
+  hooks?: { onToken?: (t: string) => void | Promise<void>; onFinal?: (fullText: string) => void | Promise<void>; onError?: (err: any) => void | Promise<void>; signal?: AbortSignal }
+): Promise<Response> {
+  // Fire-and-forget token tap for persistence hooks while returning the AI SDK data stream
+  (async () => {
+    let full = '';
+    try {
+      if (result?.textStream) {
+        for await (const t of result.textStream as AsyncIterable<string>) {
+          if (hooks?.signal?.aborted) throw new Error('aborted');
+          full += t;
+          try { await hooks?.onToken?.(t); } catch {}
+        }
+      }
+      try { await hooks?.onFinal?.(full); } catch {}
+    } catch (err) {
+      try { await hooks?.onError?.(err); } catch {}
+    }
+  })();
+
+  // Prefer UI Message Stream response for AI SDK v5 UI hooks
+  if (typeof (result as any)?.toUIMessageStreamResponse === 'function') {
+    return (result as any).toUIMessageStreamResponse();
+  }
+  // Fallback to data stream or manual SSE if needed
+  if (typeof (result as any)?.toDataStreamResponse === 'function') {
+    return (result as any).toDataStreamResponse();
+  }
+
+  // Manual SSE passthrough with heartbeats
+  const encoder = new TextEncoder();
+  const source: ReadableStream = typeof (result as any)?.toReadableStream === 'function' ? (result as any).toReadableStream() : new ReadableStream();
+  const readable = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const reader = (source as ReadableStream<Uint8Array>).getReader();
+      let heartbeat: number | undefined;
+      const pump = () => {
+        reader.read().then(({ done, value }) => {
+          if (done) {
+            if (heartbeat) clearInterval(heartbeat);
+            controller.close();
+            return;
+          }
+          if (!heartbeat) {
+            heartbeat = setInterval(() => {
+              try { controller.enqueue(encoder.encode(':\n\n')); } catch {}
+            }, 15000) as unknown as number;
+          }
+          if (value) controller.enqueue(value);
+          if (hooks?.signal?.aborted) {
+            try { reader.cancel(); } catch {}
+            if (heartbeat) clearInterval(heartbeat);
+            try { hooks?.onError?.(new Error('aborted')); } catch {}
+            controller.close();
+            return;
+          }
+          pump();
+        }).catch((err) => {
+          if (heartbeat) clearInterval(heartbeat);
+          try { hooks?.onError?.(err); } catch {}
+          try { controller.error(err); } catch {}
+        });
+      };
+      if (hooks?.signal) {
+        hooks.signal.addEventListener('abort', () => {
+          try { reader.cancel(); } catch {}
+          if (heartbeat) clearInterval(heartbeat);
+          try { hooks?.onError?.(new Error('aborted')); } catch {}
+          try { controller.close(); } catch {}
+        });
+      }
+      pump();
+    }
+  });
+  return new Response(readable, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no'
+    }
+  });
 }
 
 export async function streamObject(params: {
@@ -119,16 +192,24 @@ export async function streamObject(params: {
   const cfg = await resolveUserAIConfig(userId, db, env);
   const provider = providerOverride || cfg.provider;
 
-  const baseURL = provider === 'google' ? cfg.baseURLs.google : provider === 'openai' ? cfg.baseURLs.openai : cfg.baseURLs.openrouter;
-  if (!baseURL) throw new Error('Missing Gateway baseURL for provider ' + provider);
+  const baseURL = cfg.baseURLs.openai; // compat base for all
+  if (!baseURL) throw new Error('Missing Gateway compat baseURL');
   if (!env.AI_GATEWAY_TOKEN) throw new Error('Missing AI_GATEWAY_TOKEN for authenticated Gateway');
   const client = createProviderClient({ provider, baseURL, gatewayToken: env.AI_GATEWAY_TOKEN });
 
-  const modelName = modelOverride || (provider === 'google' ? cfg.models.google : provider === 'openai' ? cfg.models.openai : cfg.models.openrouter);
-  if (provider === 'openrouter' && !modelName) throw new Error('openrouter requires explicit model');
+  const modelParam = (() => {
+    if ((cfg as any).useDynamic) {
+      const route = modelOverride || `dynamic/${(cfg as any).dynamicRoute}`;
+      return route as string;
+    }
+    const bare = modelOverride || (provider === 'google' ? cfg.models.google : provider === 'openai' ? cfg.models.openai : cfg.models.openrouter);
+    if (provider === 'openrouter' && !bare) throw new Error('openrouter requires explicit model');
+    const providerSegment = provider === 'google' ? 'google-vertex-ai' : provider === 'openai' ? 'openai' : 'openrouter';
+    return `${providerSegment}/${bare as string}`;
+  })();
 
-  const model = client.getModel(modelName as string);
+  const model = client.getModel(modelParam);
   const result = await aiStreamObject({ model, schema, prompt: prompt || '', system, signal });
-  return { objectStream: result.objectStream, toReadableStream: result.toReadableStream };
+  return result as any;
 }
 

@@ -1,5 +1,4 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import * as GoogleMod from '@ai-sdk/google';
 import { makeGatewayFetch } from './gatewayFetch';
 
 export const PROVIDERS = ['google', 'openai', 'openrouter'] as const;
@@ -13,36 +12,27 @@ export function defaultModelFor(provider: ProviderName): string | undefined {
   }
 }
 
-function makeGoogleFactory(opts: any) {
-  const anyMod = GoogleMod as any;
-  const ctor = anyMod.createGoogle || anyMod.google || anyMod.createGoogleGenerativeAI;
-  if (!ctor) throw new Error('Unsupported @ai-sdk/google version: no compatible factory export');
-  return ctor(opts);
+function asModelFactory(client: any) {
+  if (typeof client === 'function') return client;
+  if (client && typeof client === 'object') {
+    if (typeof client.model === 'function') return client.model.bind(client);
+    if (typeof client.languageModel === 'function') return client.languageModel.bind(client);
+  }
+  throw new Error('Provider client is not a function');
 }
 
+// All providers are accessed via Cloudflare AI Gateway's OpenAI-compatible endpoint (compat)
 export function createProviderClient(opts: { provider: ProviderName; baseURL: string; gatewayToken: string }) {
   const { provider, baseURL, gatewayToken } = opts;
   const fetch = makeGatewayFetch(gatewayToken);
-
-  if (provider === 'openai') {
-    const client = createOpenAI({ baseURL, fetch });
-    return { provider, getModel: (modelName?: string) => client(modelName || defaultModelFor('openai')!) };
-  }
-  if (provider === 'google') {
-    const client = makeGoogleFactory({ baseURL, fetch });
-    return { provider, getModel: (modelName?: string) => client(modelName || defaultModelFor('google')!) };
-  }
-  if (provider === 'openrouter') {
-    // OpenRouter is OpenAI-compatible; use OpenAI client with OpenRouter baseURL
-    const client = createOpenAI({ baseURL, fetch });
-    return {
-      provider,
-      getModel: (modelName?: string) => {
-        if (!modelName) throw new Error('openrouter requires an explicit model');
-        return client(modelName);
-      }
-    };
-  }
-  throw new Error('Unsupported provider: ' + provider);
+  const client = createOpenAI({ baseURL, fetch });
+  const factory = asModelFactory(client);
+  return {
+    provider,
+    getModel: (modelName?: string) => {
+      if (!modelName) throw new Error('Model name is required for compat endpoint');
+      return factory(modelName);
+    }
+  };
 }
 
