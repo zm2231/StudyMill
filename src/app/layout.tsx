@@ -7,6 +7,7 @@ import { theme } from "@/lib/theme";
 import { AuthProvider } from "@/hooks/useAuth";
 import { TimerProvider } from "@/contexts/TimerContext";
 import { PersistentAudioProvider } from "@/contexts/PersistentAudioContext";
+import AppClientBootstrap from "./AppClientBootstrap";
 import "./globals.css";
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
@@ -46,6 +47,7 @@ export default function RootLayout({
               <PersistentAudioProvider>
                 <AuthProvider>
                   <Notifications />
+                  <AppClientBootstrap />
                   {children}
                 </AuthProvider>
               </PersistentAudioProvider>
