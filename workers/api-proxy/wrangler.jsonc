@@ -1,0 +1,15 @@
+{
+  "$schema": "../../workers/studymill-api/node_modules/wrangler/config-schema.json",
+  "name": "studymill-api-proxy",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-19",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "vars": {
+    "WORKER_API_BASE": "https://studymill-api-production.merchantzains.workers.dev"
+  },
+  "routes": [
+    "studymill.ai/api/*"
+  ]
+}
