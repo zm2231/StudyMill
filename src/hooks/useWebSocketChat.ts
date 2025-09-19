@@ -40,10 +40,10 @@ export function useWebSocketChat({
   userId,
   retrievalMode = 'advanced'
 }: UseWebSocketChatOptions) {
-  // If HTTP chat is enabled, disable WebSocket path (no-op) to avoid legacy DO logs and connections
-  if (process.env.NEXT_PUBLIC_CHAT_HTTP === '1') {
+  // WS transport is behind a flag; disable when not explicitly enabled
+  if (process.env.NEXT_PUBLIC_CHAT_WS !== '1') {
     try {
-      console.info('[useWebSocketChat] disabled by NEXT_PUBLIC_CHAT_HTTP=1');
+      console.info('[useWebSocketChat] disabled by NEXT_PUBLIC_CHAT_WS!=1');
     } catch {}
     return {
       isConnected: false,
