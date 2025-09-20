@@ -20,9 +20,42 @@ app.post('/chat', async (c) => {
     client_request_id?: string;
   };
 
+  // Accept both AI SDK payload shape and our canonical schema
   let body: Body;
   try {
-    body = await c.req.json<Body>();
+    const raw: any = await c.req.json<any>();
+
+    const extractText = (m: any): string => {
+      if (typeof m?.content === 'string') return m.content;
+      if (Array.isArray(m?.parts)) {
+        try {
+          return m.parts
+            .filter((p: any) => p?.type === 'text' && typeof p?.text === 'string')
+            .map((p: any) => p.text)
+            .join('');
+        } catch {}
+      }
+      return '';
+    };
+
+    const rawMessages = Array.isArray(raw?.messages)
+      ? raw.messages
+      : (Array.isArray(raw?.body?.messages) ? raw.body.messages : []);
+
+    const normalized: ChatMessage[] = rawMessages.map((m: any) => ({
+      role: (m?.role as any) || 'user',
+      content: extractText(m)
+    }));
+
+    body = {
+      sessionId: raw?.sessionId || raw?.body?.sessionId,
+      messages: normalized,
+      attachments: raw?.attachments || raw?.body?.attachments || [],
+      modelOverride: raw?.modelOverride || raw?.body?.modelOverride,
+      providerOverride: raw?.providerOverride || raw?.body?.providerOverride,
+      resume: raw?.resume || raw?.body?.resume,
+      client_request_id: raw?.messageId || raw?.client_request_id || raw?.body?.client_request_id,
+    };
   } catch {
     return c.json({ error: 'Invalid JSON body' }, 400);
   }

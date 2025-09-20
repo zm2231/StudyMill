@@ -67,30 +67,58 @@ export async function streamChat(params: {
   const cfg = await resolveUserAIConfig(userId, db, env);
   const provider = providerOverride || cfg.provider;
 
-  const baseURL = cfg.baseURLs.openai; // compat base for all
-  if (!baseURL) throw new Error('Missing Gateway compat baseURL');
-  if (!env.AI_GATEWAY_TOKEN) throw new Error('Missing AI_GATEWAY_TOKEN for authenticated Gateway');
-  const client = createProviderClient({ provider, baseURL, gatewayToken: env.AI_GATEWAY_TOKEN });
-
-  const modelParam = (() => {
-    if ((cfg as any).useDynamic) {
-      const route = modelOverride || `dynamic/${(cfg as any).dynamicRoute}`;
-      return route as string;
-    }
-    const bare = modelOverride || (provider === 'google' ? cfg.models.google : provider === 'openai' ? cfg.models.openai : cfg.models.openrouter);
-    if (provider === 'openrouter' && !bare) throw new Error('openrouter requires explicit model');
-    const providerSegment = provider === 'google' ? 'google-vertex-ai' : provider === 'openai' ? 'openai' : 'openrouter';
-    return `${providerSegment}/${bare as string}`;
-  })();
-
-  const model = client.getModel(modelParam);
-
   const core: any[] = [];
   if (system) core.push({ role: 'system', content: system });
   core.push(...(messages || []));
 
-  const result = await streamText({ model, messages: core, signal });
-  return result as any;
+  // Prefer Gateway when configured; otherwise gracefully fall back to Workers AI
+  try {
+    const baseURL = cfg.baseURLs.openai; // compat base for all
+    if (!baseURL) throw new Error('Missing Gateway compat baseURL');
+    if (!env.AI_GATEWAY_TOKEN) throw new Error('Missing AI_GATEWAY_TOKEN for authenticated Gateway');
+
+    const client = createProviderClient({ provider, baseURL, gatewayToken: env.AI_GATEWAY_TOKEN });
+
+    const modelParam = (() => {
+      if ((cfg as any).useDynamic) {
+        const route = modelOverride || `dynamic/${(cfg as any).dynamicRoute}`;
+        return route as string;
+      }
+      const bare = modelOverride || (provider === 'google' ? cfg.models.google : provider === 'openai' ? cfg.models.openai : cfg.models.openrouter);
+      if (provider === 'openrouter' && !bare) throw new Error('openrouter requires explicit model');
+      const providerSegment = provider === 'google' ? 'google-vertex-ai' : provider === 'openai' ? 'openai' : 'openrouter';
+      return `${providerSegment}/${bare as string}`;
+    })();
+
+    const model = client.getModel(modelParam);
+    const result = await streamText({ model, messages: core, signal });
+    return result as any;
+  } catch (err) {
+    // Fallback to Workers AI if Gateway is unavailable/misconfigured
+    try {
+      const modelId = (cfg as any).fallbackWorkersAIModel || '@cf/meta/llama-3.1-8b-instruct';
+      const aiAny: any = (env as any).AI;
+      if (!aiAny || typeof aiAny.run !== 'function') throw new Error('Workers AI binding not available');
+      const resp = await aiAny.run(modelId, { messages: core });
+      const full: string = (resp && (resp.response || resp.text || resp.output || '')) as string;
+      const encoder = new TextEncoder();
+      const readable = new ReadableStream<Uint8Array>({
+        start(controller) {
+          try {
+            const chunk = encoder.encode(full || '');
+            if (chunk && chunk.length) controller.enqueue(chunk);
+          } catch {}
+          controller.close();
+        }
+      });
+      return {
+        toReadableStream: () => readable
+      } as any;
+    } catch (e) {
+      // Re-throw original error if fallback also fails
+      throw err;
+    }
+  }
 }
 
 export async function toSSEStream(
