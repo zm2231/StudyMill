@@ -42,6 +42,7 @@ interface ChatInterfaceProps {
   courseContext?: string;
   assignmentContext?: string;
   courseId?: string;
+  onFallback?: (reason: string) => void;
 }
 
 interface ChatScope {
@@ -55,8 +56,16 @@ export function ChatInterface({
   sessionId,
   courseContext,
   assignmentContext,
-  courseId
+  courseId,
+  onFallback,
 }: ChatInterfaceProps) {
+  // Disable when WS flag is not enabled
+  if (process.env.NEXT_PUBLIC_CHAT_WS !== '1') {
+    try {
+      console.warn('[ChatInterface(WS)] disabled by NEXT_PUBLIC_CHAT_WS!=1');
+    } catch {}
+    return null;
+  }
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -73,6 +82,11 @@ export function ChatInterface({
   const [retrievalMode, setRetrievalMode] = useState<'basic' | 'advanced'>('advanced');
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Fallback timers
+  const connectTimeoutRef = useRef<number | null>(null);
+  const firstTokenTimeoutRef = useRef<number | null>(null);
+  const fellBackRef = useRef(false);
   
   const {
     isConnected,
@@ -95,11 +109,35 @@ export function ChatInterface({
     retrievalMode,
     onError: (error) => {
       console.error('Chat error:', error);
+      if (!fellBackRef.current) {
+        fellBackRef.current = true;
+        onFallback?.('ws_error');
+      }
     }
   });
 
   const isLoading = isConnecting || !isConnected;
   const isTyping = !!streamingMessage;
+
+  // WS connect timeout -> fallback to SSE
+  useEffect(() => {
+    if (fellBackRef.current) return;
+    if (isConnected) {
+      if (connectTimeoutRef.current) {
+        clearTimeout(connectTimeoutRef.current);
+        connectTimeoutRef.current = null;
+      }
+      return;
+    }
+    if (isConnecting && !connectTimeoutRef.current) {
+      connectTimeoutRef.current = setTimeout(() => {
+        if (!isConnected && !fellBackRef.current) {
+          fellBackRef.current = true;
+          onFallback?.('ws_connect_timeout');
+        }
+      }, 10000) as unknown as number;
+    }
+  }, [isConnected, isConnecting, onFallback]);
 
   // Collapse sidebars when history opens
   useEffect(() => {
@@ -173,6 +211,22 @@ export function ChatInterface({
     }
   }, [messages, streamingMessage]);
 
+  // Clear first-token timeout when streaming starts
+  useEffect(() => {
+    if (streamingMessage && firstTokenTimeoutRef.current) {
+      clearTimeout(firstTokenTimeoutRef.current);
+      firstTokenTimeoutRef.current = null;
+    }
+  }, [streamingMessage]);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
+      if (firstTokenTimeoutRef.current) clearTimeout(firstTokenTimeoutRef.current);
+    };
+  }, []);
+
   // Focus input on mount
   useEffect(() => {
     if (inputRef.current) {
@@ -209,6 +263,18 @@ export function ChatInterface({
 
     const content = inputValue.trim();
     setInputValue('');
+
+    // Start first-token timeout fallback
+    if (firstTokenTimeoutRef.current) {
+      clearTimeout(firstTokenTimeoutRef.current);
+      firstTokenTimeoutRef.current = null;
+    }
+    firstTokenTimeoutRef.current = setTimeout(() => {
+      if (!fellBackRef.current && !streamingMessage) {
+        fellBackRef.current = true;
+        onFallback?.('no_first_token');
+      }
+    }, 7000) as unknown as number;
 
     // Send message via WebSocket
     const success = sendMessage(content);

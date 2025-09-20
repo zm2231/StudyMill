@@ -1,0 +1,2 @@
+# Proxy all API requests to the Worker
+/api/* https://studymill-api-production.merchantzains.workers.dev/api/:splat 200

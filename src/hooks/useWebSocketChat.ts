@@ -40,6 +40,29 @@ export function useWebSocketChat({
   userId,
   retrievalMode = 'advanced'
 }: UseWebSocketChatOptions) {
+  // WS transport is behind a flag; disable when not explicitly enabled
+  if (process.env.NEXT_PUBLIC_CHAT_WS !== '1') {
+    try {
+      console.info('[useWebSocketChat] disabled by NEXT_PUBLIC_CHAT_WS!=1');
+    } catch {}
+    return {
+      isConnected: false,
+      isConnecting: false,
+      messages: [] as Message[],
+      streamingMessage: null as Message | null,
+      sendMessage: (_content: string) => false,
+      sendTyping: (_isTyping: boolean) => {},
+      clearMessages: () => {},
+      connect: () => {},
+      disconnect: () => {},
+      replaceMessages: (_msgs: Message[]) => {},
+      sessionId: sessionId || 'ws_disabled',
+      lastError: null as string | null,
+      connectionAttempts: 0,
+      readyState: 3 // CLOSED
+    };
+  }
+
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -48,7 +71,7 @@ export function useWebSocketChat({
   const [lastError, setLastError] = useState<string | null>(null);
   const [connectionAttempts, setConnectionAttempts] = useState<number>(0);
   const wsRef = useRef<WebSocket | null>(null);
-  const currentSessionId = useRef<string>(sessionId || crypto.randomUUID());
+  const currentSessionId = useRef<string>(sessionId || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `session_${Math.random().toString(36).slice(2)}`));
   const onMessageRef = useRef(onMessage);
   const onErrorRef = useRef(onError);
   useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);

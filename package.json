@@ -14,6 +14,7 @@
     "pages:deploy": "wrangler pages deploy"
   },
   "dependencies": {
+"@ai-sdk/react": "^2.0.39",
     "@mantine/core": "^8.2.5",
     "@mantine/dates": "^8.2.5",
     "@mantine/dropzone": "^8.2.5",
@@ -37,6 +38,7 @@
     "@tiptap/react": "^3.2.0",
     "@tiptap/starter-kit": "^3.2.0",
     "@types/katex": "^0.16.7",
+    "ai": "^5.0.39",
     "allotment": "^1.20.4",
     "better-upload": "^1.1.0",
     "clsx": "^2.1.1",
@@ -70,5 +72,9 @@
     "eslint-config-next": "15.4.6",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "ai": "^5.0.39",
+    "@ai-sdk/react": "^2.0.39"
   }
 }

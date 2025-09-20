@@ -291,3 +291,45 @@ If you encounter issues during migration:
 ---
 
 *Migration Guide v2.0 - Safe transition to memory-first architecture*
+
+---
+
+## Phase 0 AI SDK foundation (2025-09-10)
+
+Defaults:
+- Providers/models: google (gemini-2.5-flash), openai (gpt-4o-mini), openrouter (no default; explicit model required)
+- Infra fallback (routing target only): @cf/meta/llama-3.1-70b-instruct-fp8-fast
+
+Gateway:
+- Enabled; base URLs injected via env vars in wrangler.jsonc:
+  - AI_GATEWAY_OPENAI_BASE_URL, AI_GATEWAY_GOOGLE_BASE_URL, AI_GATEWAY_OPENROUTER_BASE_URL
+- Guardrails + rate limiting ON in dashboard; caching OFF for now
+
+BYOK encryption:
+- AES-GCM + HKDF-SHA256
+- Base64url envelopes: v1.{salt_b64u}.{iv_b64u}.{ct_b64u}.{key_id}
+
+D1 schema:
+- user_ai_preferences table with: default_provider, use_gateway, keys_json, envelope metadata (envelope_ver, kdf_alg, enc_alg, salt_b64u, key_id), provider_models, timestamps
+
+Runtime scope:
+- Added crypto utils, provider registry, AI SDK service (streamText/streamObject) with user preference resolution
+- No route changes; Durable Object + Gemini SDK remain in place (Phase 0)
+
+Commands:
+```bash
+# Install deps
+cd workers/studymill-api
+npm i -E ai @ai-sdk/openai @ai-sdk/google zod
+
+# Apply D1 migration
+wrangler d1 execute studymill-db --file=migrations/20250910_user_ai_preferences.sql --local
+
+# Secrets (dev; repeat for --env staging/production)
+wrangler secret put AI_PREFS_MASTER_KEY
+wrangler secret put AI_GATEWAY_TOKEN
+
+# Verify
+npm run test
+wrangler deploy --dry-run
+```

@@ -35,6 +35,26 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
+// Dev-only: warn if critical tables are missing (surface missing migrations early)
+let __devTableCheckDone = false;
+app.use('*', async (c, next) => {
+  try {
+    if (!__devTableCheckDone && c.env?.ENVIRONMENT === 'development') {
+      // Check for user_ai_preferences table presence
+      const row = await c.env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='user_ai_preferences'"
+      ).first();
+      if (!row) {
+        console.warn('[DEV] D1 table missing: user_ai_preferences. Run Phase 0 migration: migrations/20250910_user_ai_preferences.sql');
+      }
+      __devTableCheckDone = true;
+    }
+  } catch (e) {
+    // Non-fatal; continue
+  }
+  return next();
+});
+
 // Global middleware - Order matters for security
 app.use('*', logger());
 
@@ -127,6 +147,19 @@ app.use('/chat/*', async (c, next) => {
     );
   } catch {}
 
+  return c.redirect(redirected, 308);
+});
+
+// Provide non-versioned /api/chat -> /api/v1/chat redirect for Phase 1 rollout
+app.use('/api/chat/*', async (c) => {
+  const url = new URL(c.req.url);
+  const redirected = `/api/v1${url.pathname.substring(4)}${url.search}`; // strip '/api'
+  try {
+    const ts = new Date().toISOString();
+    console.log(
+      JSON.stringify({ event: 'api_chat_redirect', ts, from: url.pathname, to: redirected })
+    );
+  } catch {}
   return c.redirect(redirected, 308);
 });
 
