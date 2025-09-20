@@ -84,26 +84,8 @@ export function ChatInterfaceHTTP() {
     status,
     error
   } = useChat({
-    // Provide both an absolute API and a fetch override as belt & suspenders
-    // This guarantees the request is sent to the Worker even if the library defaults to a relative path.
-    api: `${base}/api/chat`,
-    fetch: (input: RequestInfo | URL, init?: RequestInit) => {
-      try {
-        const raw = typeof input === 'string' ? input : (input as Request).url;
-        const baseUrl = new URL(base);
-        // Build a URL relative to the Worker base, then force the host to the Worker origin
-        const url = raw.startsWith('http')
-          ? new URL(raw)
-          : new URL(raw.startsWith('/') ? raw : `/${raw}`, baseUrl);
-        // Force all requests to go through the Worker origin
-        url.protocol = baseUrl.protocol;
-        url.host = baseUrl.host;
-        return fetch(url.toString(), init);
-      } catch (e) {
-        // If anything goes wrong constructing the URL, fall back to the canonical chat endpoint
-        return fetch(`${base}/api/chat`, init);
-      }
-    },
+    // Use same-origin API routed through Pages Function / zone Worker
+    api: `/api/v1/chat`,
     headers: () => {
       const tkn = typeof window !== 'undefined' ? apiClient.getAccessToken() : null;
       return tkn ? { Authorization: `Bearer ${tkn}` } : {};

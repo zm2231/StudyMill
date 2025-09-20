@@ -24,9 +24,25 @@ export default function AppClientBootstrap() {
               }
               init = { ...init, headers };
             }
+
+            // Temporary client-side logging for chat endpoint errors
+            if (url.pathname === '/api/v1/chat') {
+              const method = (init?.method || (typeof input !== 'string' && (input as Request).method) || 'GET').toUpperCase();
+              console.info('[client-chat] request', { method, url: url.toString(), hasAuth: !!token });
+            }
           }
         } catch {}
-        return originalFetch(input as any, init);
+        const res = await originalFetch(input as any, init);
+        try {
+          const urlStr = typeof input === 'string' ? input : (input as Request).url;
+          const url = new URL(urlStr, window.location.origin);
+          if (url.pathname === '/api/v1/chat' && res.status >= 400) {
+            const copy = res.clone();
+            const text = await copy.text().catch(() => '');
+            console.error('[client-chat] error', { status: res.status, statusText: res.statusText, bodyPreview: text.slice(0, 1200), traceId: res.headers.get('x-proxy-trace-id') });
+          }
+        } catch {}
+        return res;
       };
       // eslint-disable-next-line no-console
       console.info('[AppClientBootstrap] Global fetch interceptor installed');
