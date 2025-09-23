@@ -15,8 +15,13 @@ export function defaultModelFor(provider: ProviderName): string | undefined {
 // Prefer Chat Completions over Responses for Cloudflare Gateway compat.
 // Dynamic routes and some providers may not fully support the Responses API yet.
 function chatModelFactory(client: any) {
-  if (client && typeof client === 'object' && typeof client.chat === 'function') {
-    return client.chat.bind(client);
+  if (client && typeof client === 'object') {
+    if (client.chat && typeof client.chat.completions === 'function') {
+      return client.chat.completions.bind(client.chat);
+    }
+    if (typeof client.chat === 'function') {
+      return client.chat.bind(client);
+    }
   }
   // Fallbacks – these still point to responses API which has caused 500s in Gateway
   if (typeof client === 'function') return client; // provider() -> responses
