@@ -12,13 +12,16 @@ export function defaultModelFor(provider: ProviderName): string | undefined {
   }
 }
 
-function asModelFactory(client: any) {
-  if (typeof client === 'function') return client;
-  if (client && typeof client === 'object') {
-    if (typeof client.model === 'function') return client.model.bind(client);
-    if (typeof client.languageModel === 'function') return client.languageModel.bind(client);
+// Prefer Chat Completions over Responses for Cloudflare Gateway compat.
+// Dynamic routes and some providers may not fully support the Responses API yet.
+function chatModelFactory(client: any) {
+  if (client && typeof client === 'object' && typeof client.chat === 'function') {
+    return client.chat.bind(client);
   }
-  throw new Error('Provider client is not a function');
+  // Fallbacks – these still point to responses API which has caused 500s in Gateway
+  if (typeof client === 'function') return client; // provider() -> responses
+  if (client && typeof client.languageModel === 'function') return client.languageModel.bind(client);
+  throw new Error('Provider client does not expose a chat model factory');
 }
 
 // All providers are accessed via Cloudflare AI Gateway's OpenAI-compatible endpoint (compat)
@@ -28,7 +31,7 @@ export function createProviderClient(opts: { provider: ProviderName; baseURL: st
   // Provide the Gateway token as the OpenAI apiKey so the SDK sends
   // Authorization: Bearer <AI_GATEWAY_TOKEN>, per Cloudflare docs.
   const client = createOpenAI({ baseURL, apiKey: gatewayToken, fetch });
-  const factory = asModelFactory(client);
+  const factory = chatModelFactory(client);
   return {
     provider,
     getModel: (modelName?: string) => {
@@ -37,4 +40,3 @@ export function createProviderClient(opts: { provider: ProviderName; baseURL: st
     }
   };
 }
-
