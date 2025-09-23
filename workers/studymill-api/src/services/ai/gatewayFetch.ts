@@ -1,8 +1,13 @@
-export function makeGatewayFetch() {
+export function makeGatewayFetch(gatewayToken: string) {
   return async (url: string, init?: RequestInit) => {
     const headers = new Headers(init?.headers || {});
-    // Do not modify Authorization here; createOpenAI will set
-    // Authorization: Bearer <AI_GATEWAY_TOKEN> which Gateway expects.
+    // Ensure authenticated gateway header is present (Cloudflare requirement
+    // when the Gateway is configured with auth tokens).
+    if (!headers.has('cf-aig-authorization')) {
+      headers.set('cf-aig-authorization', `Bearer ${gatewayToken}`);
+    }
+    // Do not modify Authorization here; createOpenAI sets
+    // Authorization: Bearer <AI_GATEWAY_TOKEN> already.
     if (init?.body && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
     }
@@ -23,4 +28,3 @@ export function makeGatewayFetch() {
     return res;
   };
 }
-

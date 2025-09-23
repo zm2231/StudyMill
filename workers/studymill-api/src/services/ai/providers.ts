@@ -27,7 +27,7 @@ function chatModelFactory(client: any) {
 // All providers are accessed via Cloudflare AI Gateway's OpenAI-compatible endpoint (compat)
 export function createProviderClient(opts: { provider: ProviderName; baseURL: string; gatewayToken: string }) {
   const { provider, baseURL, gatewayToken } = opts;
-  const fetch = makeGatewayFetch();
+  const fetch = makeGatewayFetch(gatewayToken);
   // Provide the Gateway token as the OpenAI apiKey so the SDK sends
   // Authorization: Bearer <AI_GATEWAY_TOKEN>, per Cloudflare docs.
   const client = createOpenAI({ baseURL, apiKey: gatewayToken, fetch });

@@ -11,7 +11,7 @@
     "type-check": "tsc --noEmit",
     "pages:build": "npm run build && npx -y @cloudflare/next-on-pages@1 && node scripts/enable-nodejs-compat.mjs",
     "pages:dev": "npx @cloudflare/next-on-pages --watch",
-    "pages:deploy": "wrangler pages deploy"
+    "pages:deploy": "npm run pages:build && wrangler pages deploy .vercel/output/static --project-name=studymill-frontend --branch main --commit-dirty=true"
   },
   "dependencies": {
 "@ai-sdk/react": "^2.0.39",
