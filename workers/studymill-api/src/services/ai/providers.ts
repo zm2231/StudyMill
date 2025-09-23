@@ -12,6 +12,23 @@ export function defaultModelFor(provider: ProviderName): string | undefined {
   }
 }
 
+// Prefer Chat Completions over Responses for Cloudflare Gateway compat.
+// Dynamic routes and some providers may not fully support the Responses API yet.
+function chatModelFactory(client: any) {
+  if (client && typeof client === 'object') {
+    if (client.chat && typeof client.chat.completions === 'function') {
+      return client.chat.completions.bind(client.chat);
+    }
+    if (typeof client.chat === 'function') {
+      return client.chat.bind(client);
+    }
+  }
+  // Fallbacks – these still point to responses API which has caused 500s in Gateway
+  if (typeof client === 'function') return client; // provider() -> responses
+  if (client && typeof client.languageModel === 'function') return client.languageModel.bind(client);
+  throw new Error('Provider client does not expose a chat model factory');
+}
+
 // All providers are accessed via Cloudflare AI Gateway's OpenAI-compatible endpoint (compat)
 export function createProviderClient(opts: { provider: ProviderName; baseURL: string; gatewayToken: string }) {
   const { provider, baseURL, gatewayToken } = opts;
