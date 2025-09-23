@@ -1,0 +1,2 @@
+# Cloudflare Pages redirect rules to force /api/* traffic to the Worker origin
+/api/* https://studymill-api-production.merchantzains.workers.dev/api/:splat 200

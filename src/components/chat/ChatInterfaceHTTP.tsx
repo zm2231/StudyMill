@@ -66,17 +66,23 @@ export function ChatInterfaceHTTP() {
 
   const token = useMemo(() => (typeof window !== 'undefined' ? apiClient.getAccessToken() : null), []);
 
-  // ABSOLUTE base URL to the Worker — use the secret, no fallback
-  const base = process.env.NEXT_PUBLIC_API_URL!;
+  // Resolve absolute base URL for the Cloudflare Worker (default to production host if unset)
+  const resolvedApiBase = useMemo(() => {
+    const fallback = 'https://studymill-api-production.merchantzains.workers.dev';
+    const raw = process.env.NEXT_PUBLIC_API_URL?.trim() || fallback;
+    return raw.replace(/\/+$/, '');
+  }, []);
+  const apiEndpoint = `${resolvedApiBase}/api/v1/chat`;
 
   useEffect(() => {
     try {
       console.info('[ChatInterfaceHTTP] mounted', {
-        base,
+        apiEndpoint,
+        resolvedApiBase,
         NEXT_PUBLIC_CHAT_HTTP: process.env.NEXT_PUBLIC_CHAT_HTTP,
       });
     } catch {}
-  }, [base]);
+  }, [apiEndpoint, resolvedApiBase]);
 
   const {
     messages: chatMessages,
@@ -84,8 +90,8 @@ export function ChatInterfaceHTTP() {
     status,
     error
   } = useChat({
-    // Use same-origin API routed through Pages Function / zone Worker
-    api: `/api/v1/chat`,
+    // Always call the Worker using an absolute URL (avoid Pages-relative fallbacks)
+    api: apiEndpoint,
     headers: () => {
       const tkn = typeof window !== 'undefined' ? apiClient.getAccessToken() : null;
       return tkn ? { Authorization: `Bearer ${tkn}` } : {};
