@@ -4,7 +4,12 @@ import { createProviderClient, defaultModelFor, ProviderName } from './providers
 
 function compatBaseURL(env: Bindings, useGateway: boolean) {
   if (!useGateway) return undefined;
-  return env.AI_GATEWAY_COMPAT_BASE_URL;
+  let base = (env as any).AI_GATEWAY_COMPAT_BASE_URL as string | undefined;
+  if (!base) return undefined;
+  // Ensure baseURL ends with /v1 for OpenAI-compat endpoints
+  base = base.replace(/\/$/, '');
+  if (!base.endsWith('/v1')) base = `${base}/v1`;
+  return base;
 }
 
 async function loadPrefs(userId: string, db: D1Database) {

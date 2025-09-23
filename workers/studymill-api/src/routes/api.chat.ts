@@ -181,6 +181,18 @@ app.post('/chat', async (c) => {
     return c.json({ error: 'provider=openrouter requires modelOverride', hint: 'Specify modelOverride with a valid OpenRouter model id' }, 400);
   }
 
+  try {
+    console.log(JSON.stringify({
+      event: 'chat_stream_start',
+      userId,
+      sessionId,
+      provider,
+      model,
+      route: (c.env as any).AI_GATEWAY_DYNAMIC_ROUTE,
+      useDynamic: (c.env as any).AI_GATEWAY_DYNAMIC_ENABLE === '1'
+    }));
+  } catch {}
+
   const generationId = crypto.randomUUID();
 
   // Create assistant placeholder row to stream into
@@ -299,6 +311,17 @@ app.post('/chat', async (c) => {
           .prepare(`UPDATE chat_sessions SET generation_id = NULL, updated_at = ? WHERE id = ? AND user_id = ?`)
           .bind(new Date().toISOString(), sessionId, userId)
           .run();
+      } catch {}
+      try {
+        console.error(JSON.stringify({
+          event: 'chat_stream_error',
+          requestId: c.get('requestId'),
+          userId,
+          sessionId,
+          provider,
+          model,
+          error: (err && (err as any).message) || String(err)
+        }));
       } catch {}
     },
   });
