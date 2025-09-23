@@ -8,14 +8,22 @@ export default function AppClientBootstrap() {
   useEffect(() => {
     try {
       const originalFetch = window.fetch.bind(window);
+      const fallbackOrigin = 'https://studymill-api-production.merchantzains.workers.dev';
+      let workerOrigin = fallbackOrigin;
+      try {
+        const envBase = process.env.NEXT_PUBLIC_API_URL?.trim();
+        workerOrigin = envBase ? new URL(envBase).origin : fallbackOrigin;
+      } catch {}
       window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
         try {
           const urlStr = typeof input === 'string' ? input : (input as Request).url;
           const url = new URL(urlStr, window.location.origin);
 
-          // Only target our API chat endpoints and other API calls
+          // Only target our API chat endpoints and other API calls (same-origin or Worker origin)
           const isApiPath = url.pathname.startsWith('/api/');
-          if (isApiPath) {
+          const isSameOriginApi = url.origin === window.location.origin && isApiPath;
+          const isWorkerApi = url.origin === workerOrigin && isApiPath;
+          if (isSameOriginApi || isWorkerApi) {
             const token = apiClient.getAccessToken();
             if (token) {
               const headers = new Headers(init?.headers || {});
@@ -28,7 +36,12 @@ export default function AppClientBootstrap() {
             // Temporary client-side logging for chat endpoint errors
             if (url.pathname === '/api/v1/chat') {
               const method = (init?.method || (typeof input !== 'string' && (input as Request).method) || 'GET').toUpperCase();
-              console.info('[client-chat] request', { method, url: url.toString(), hasAuth: !!token });
+              console.info('[client-chat] request', {
+                method,
+                url: url.toString(),
+                hasAuth: !!token,
+                targetOrigin: url.origin,
+              });
             }
           }
         } catch {}
