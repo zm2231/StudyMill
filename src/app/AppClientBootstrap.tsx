@@ -36,11 +36,33 @@ export default function AppClientBootstrap() {
             // Temporary client-side logging for chat endpoint errors
             if (url.pathname === '/api/v1/chat') {
               const method = (init?.method || (typeof input !== 'string' && (input as Request).method) || 'GET').toUpperCase();
+              let bodyPreview: string | undefined;
+              let parsedBody: any;
+              try {
+                if (init?.body && typeof init.body === 'string') {
+                  bodyPreview = init.body;
+                } else if (typeof input !== 'string' && (input as Request).bodyUsed === false) {
+                  const clone = (input as Request).clone();
+                  bodyPreview = await clone.text();
+                } else if (init?.body instanceof URLSearchParams) {
+                  bodyPreview = init.body.toString();
+                }
+                if (bodyPreview) {
+                  parsedBody = JSON.parse(bodyPreview);
+                }
+              } catch (err) {
+                console.warn('[client-chat] payload parse failed', err);
+              }
               console.info('[client-chat] request', {
                 method,
                 url: url.toString(),
                 hasAuth: !!token,
                 targetOrigin: url.origin,
+                sessionId: parsedBody?.sessionId,
+                client_request_id: parsedBody?.client_request_id,
+                modelOverride: parsedBody?.modelOverride,
+                providerOverride: parsedBody?.providerOverride,
+                messagesCount: Array.isArray(parsedBody?.messages) ? parsedBody.messages.length : undefined,
               });
             }
           }
@@ -52,7 +74,19 @@ export default function AppClientBootstrap() {
           if (url.pathname === '/api/v1/chat' && res.status >= 400) {
             const copy = res.clone();
             const text = await copy.text().catch(() => '');
-            console.error('[client-chat] error', { status: res.status, statusText: res.statusText, bodyPreview: text.slice(0, 1200), traceId: res.headers.get('x-proxy-trace-id') });
+            console.error('[client-chat] error', {
+              status: res.status,
+              statusText: res.statusText,
+              bodyPreview: text.slice(0, 1200),
+              traceId: res.headers.get('x-request-id') || res.headers.get('cf-ray') || res.headers.get('x-proxy-trace-id'),
+            });
+          } else if (url.pathname === '/api/v1/chat') {
+            console.info('[client-chat] response', {
+              status: res.status,
+              statusText: res.statusText,
+              traceId: res.headers.get('x-request-id') || res.headers.get('cf-ray'),
+              contentType: res.headers.get('content-type'),
+            });
           }
         } catch {}
         return res;
