@@ -24,6 +24,17 @@ export default function AppClientBootstrap() {
           const isSameOriginApi = url.origin === window.location.origin && isApiPath;
           const isWorkerApi = url.origin === workerOrigin && isApiPath;
           if (isSameOriginApi || isWorkerApi) {
+            let targetUrl = url;
+            let rewritten = false;
+            if (isSameOriginApi && !isWorkerApi) {
+              const workerUrl = new URL(workerOrigin);
+              workerUrl.pathname = url.pathname;
+              workerUrl.search = url.search;
+              workerUrl.hash = url.hash;
+              targetUrl = workerUrl;
+              rewritten = true;
+              input = targetUrl.toString();
+            }
             const token = apiClient.getAccessToken();
             if (token) {
               const headers = new Headers(init?.headers || {});
@@ -55,9 +66,10 @@ export default function AppClientBootstrap() {
               }
               console.info('[client-chat] request', {
                 method,
-                url: url.toString(),
+                url: targetUrl.toString(),
                 hasAuth: !!token,
-                targetOrigin: url.origin,
+                targetOrigin: targetUrl.origin,
+                rewritten,
                 sessionId: parsedBody?.sessionId,
                 client_request_id: parsedBody?.client_request_id,
                 modelOverride: parsedBody?.modelOverride,
