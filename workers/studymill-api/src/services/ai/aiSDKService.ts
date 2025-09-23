@@ -96,33 +96,19 @@ export async function streamChat(params: {
     })();
 
     const model = client.getModel(modelParam);
-    const result = await streamText({ model, messages: core, signal });
+    const result = await streamText({ model, messages: core, signal, maxTries: 1 });
     return result as any;
-  } catch (err) {
-    // Fallback to Workers AI if Gateway is unavailable/misconfigured
+  } catch (err: any) {
     try {
-      const modelId = (cfg as any).fallbackWorkersAIModel || '@cf/meta/llama-3.1-8b-instruct';
-      const aiAny: any = (env as any).AI;
-      if (!aiAny || typeof aiAny.run !== 'function') throw new Error('Workers AI binding not available');
-      const resp = await aiAny.run(modelId, { messages: core });
-      const full: string = (resp && (resp.response || resp.text || resp.output || '')) as string;
-      const encoder = new TextEncoder();
-      const readable = new ReadableStream<Uint8Array>({
-        start(controller) {
-          try {
-            const chunk = encoder.encode(full || '');
-            if (chunk && chunk.length) controller.enqueue(chunk);
-          } catch {}
-          controller.close();
-        }
-      });
-      return {
-        toReadableStream: () => readable
-      } as any;
-    } catch (e) {
-      // Re-throw original error if fallback also fails
-      throw err;
-    }
+      console.error(JSON.stringify({
+        event: 'gateway_request_failed',
+        provider,
+        modelParam,
+        message: err?.message || String(err),
+        stack: err?.stack || null,
+      }));
+    } catch {}
+    throw err;
   }
 }
 
@@ -245,4 +231,3 @@ export async function streamObject(params: {
   const result = await aiStreamObject({ model, schema, prompt: prompt || '', system, signal });
   return result as any;
 }
-
