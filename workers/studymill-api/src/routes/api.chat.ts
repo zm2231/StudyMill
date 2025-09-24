@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
-import { resolveUserAIConfig, streamChat, toSSEStream } from '../services/ai/aiSDKService';
-import type { ProviderName } from '../services/ai/providers';
+import { streamChat, toSSEStream } from '../services/ai/aiSDKService';
 import { getContextForDocuments } from '../services/contextSynthesis';
 
 export function registerChatRoutes(app: Hono) {
@@ -15,7 +14,8 @@ app.post('/chat', async (c) => {
     messages: ChatMessage[];
     attachments?: string[]; // document IDs
     modelOverride?: string;
-    providerOverride?: ProviderName;
+    providerOverride?: string;
+    byokKey?: string;
     resume?: boolean;
     client_request_id?: string;
   };
@@ -53,6 +53,7 @@ app.post('/chat', async (c) => {
       attachments: raw?.attachments || raw?.body?.attachments || [],
       modelOverride: raw?.modelOverride || raw?.body?.modelOverride,
       providerOverride: raw?.providerOverride || raw?.body?.providerOverride,
+      byokKey: raw?.byokKey || raw?.body?.byokKey,
       resume: raw?.resume || raw?.body?.resume,
       client_request_id: raw?.messageId || raw?.client_request_id || raw?.body?.client_request_id,
     };
@@ -173,23 +174,20 @@ app.post('/chat', async (c) => {
   // include previous messages provided by client (optional)
   for (const m of body.messages) coreMessages.push(m);
 
-  // 4) Resolve provider/model for metadata + start streaming
-  const cfg = await resolveUserAIConfig(userId, db, c.env as any);
-  const provider: ProviderName = body.providerOverride || cfg.provider;
-  const model: string | undefined = body.modelOverride || (provider === 'openrouter' ? undefined : (cfg.models as any)[provider]);
-  if (provider === 'openrouter' && !model) {
-    return c.json({ error: 'provider=openrouter requires modelOverride', hint: 'Specify modelOverride with a valid OpenRouter model id' }, 400);
-  }
+  const requestedModel = body.modelOverride || (c.env as any).AIG_DEFAULT_MODEL;
+  const byokKey = typeof body.byokKey === 'string' && body.byokKey.trim().length > 0
+    ? body.byokKey.trim()
+    : undefined;
+  const providerLabel = byokKey ? 'byok' : 'gateway';
 
   try {
     console.log(JSON.stringify({
       event: 'chat_stream_start',
       userId,
       sessionId,
-      provider,
-      model,
-      route: (c.env as any).AI_GATEWAY_DYNAMIC_ROUTE,
-      useDynamic: (c.env as any).AI_GATEWAY_DYNAMIC_ENABLE === '1'
+      provider: providerLabel,
+      modelRequested: requestedModel,
+      byok: !!byokKey
     }));
   } catch {}
 
@@ -210,7 +208,7 @@ app.post('/chat', async (c) => {
     .prepare(
       `UPDATE chat_sessions SET provider = ?, model_id = ?, generation_id = ?, updated_at = ? WHERE id = ? AND user_id = ?`
     )
-    .bind(provider, model || null, generationId, now, sessionId, userId)
+    .bind(providerLabel, requestedModel || null, generationId, now, sessionId, userId)
     .run();
 
   // Kick off streaming
@@ -218,8 +216,9 @@ app.post('/chat', async (c) => {
     {
       userId,
       messages: coreMessages,
-      modelOverride: model,
-      providerOverride: provider,
+      modelOverride: requestedModel,
+      providerOverride: providerLabel,
+      byokKey,
       signal: (c.req as any).raw?.signal,
     },
     { env: c.env as any, db }
@@ -279,9 +278,10 @@ app.post('/chat', async (c) => {
             assistantMessageId
           )
           .run();
+        const finalModel = result.getModel();
         await db
-          .prepare(`UPDATE chat_sessions SET generation_id = NULL, updated_at = ? WHERE id = ? AND user_id = ?`)
-          .bind(new Date().toISOString(), sessionId, userId)
+          .prepare(`UPDATE chat_sessions SET generation_id = NULL, model_id = ?, updated_at = ? WHERE id = ? AND user_id = ?`)
+          .bind(finalModel, new Date().toISOString(), sessionId, userId)
           .run();
         // Structured completion log
         try {
@@ -289,8 +289,10 @@ app.post('/chat', async (c) => {
             event: 'chat_turn_complete',
             userId,
             sessionId,
-            provider,
-            model,
+            provider: providerLabel,
+            model_requested: requestedModel,
+            model_used: finalModel,
+            fallback_used: result.didFallback(),
             tokens_out: full.length,
             latency_ms: Date.now() - startedAt,
             context_hash,
@@ -318,8 +320,8 @@ app.post('/chat', async (c) => {
           requestId: c.get('requestId'),
           userId,
           sessionId,
-          provider,
-          model,
+          provider: providerLabel,
+          model_requested: requestedModel,
           error: (err && (err as any).message) || String(err)
         }));
       } catch {}
@@ -339,4 +341,3 @@ app.post('/chat', async (c) => {
   return sse;
 });
 }
-

@@ -48,6 +48,8 @@ export function ChatInterfaceHTTP() {
   const [text, setText] = useState('');
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
+  const userBYOKKey: string | undefined = undefined;
+
   // Ensure a session exists before first send
   useEffect(() => {
     (async () => {
@@ -96,7 +98,7 @@ export function ChatInterfaceHTTP() {
       const tkn = typeof window !== 'undefined' ? apiClient.getAccessToken() : null;
       return tkn ? { Authorization: `Bearer ${tkn}` } : {};
     },
-    body: () => (sessionId ? { sessionId } : undefined),
+    body: () => (sessionId ? { sessionId, byokKey: userBYOKKey || undefined } : undefined),
     onFinish: async () => {
       try {
         if (!sessionId) return;
