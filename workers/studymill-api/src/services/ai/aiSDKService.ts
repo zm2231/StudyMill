@@ -1,233 +1,279 @@
-import { streamText, streamObject as aiStreamObject } from 'ai';
+import { JsonToSseTransformStream, UI_MESSAGE_STREAM_HEADERS } from 'ai';
+import type OpenAI from 'openai';
 import { z } from 'zod';
-import { createProviderClient, defaultModelFor, ProviderName } from './providers';
+import { createOpenAICompatClient } from './providers';
 
-function compatBaseURL(env: Bindings, useGateway: boolean) {
-  if (!useGateway) return undefined;
-  let base = (env as any).AI_GATEWAY_COMPAT_BASE_URL as string | undefined;
-  if (!base) return undefined;
-  // Ensure baseURL ends with /v1 for OpenAI-compat endpoints
-  base = base.replace(/\/$/, '');
-  if (!base.endsWith('/v1')) base = `${base}/v1`;
-  return base;
+export type ChatMessage = {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+};
+
+type StreamChatParams = {
+  userId: string;
+  messages: ChatMessage[];
+  system?: string;
+  modelOverride?: string;
+  providerOverride?: string; // kept for backward compatibility (ignored)
+  byokKey?: string | null;
+  signal?: AbortSignal;
+};
+
+type StreamChatContext = {
+  env: Bindings;
+  db: D1Database;
+};
+
+type StreamChatResult = {
+  textStream: AsyncIterable<string>;
+  getModel: () => string;
+  didFallback: () => boolean;
+  finalResponse: () => Promise<OpenAI.Chat.Completions.ChatCompletion | null>;
+  cancel: () => void;
+};
+
+function isHardClientError(err: unknown) {
+  if (!err || typeof err !== 'object') return false;
+  const status = (err as any)?.status ?? (err as any)?.response?.status;
+  if (typeof status === 'number') {
+    return status > 0 && status < 500;
+  }
+  return false;
 }
 
-async function loadPrefs(userId: string, db: D1Database) {
-  return await db
-    .prepare(
-      "SELECT default_provider, use_gateway, provider_models FROM user_ai_preferences WHERE user_id=?1"
-    )
-    .bind(userId)
-    .first();
+type RunModelOptions = {
+  client: OpenAI;
+  model: string;
+  messages: ChatMessage[];
+};
+
+type ModelStream = {
+  iterator: AsyncIterable<string>;
+  responsePromise: Promise<OpenAI.Chat.Completions.ChatCompletion | null>;
+  abort: () => void;
+};
+
+async function createModelStream(opts: RunModelOptions): Promise<ModelStream> {
+  const { client, model, messages } = opts;
+  const stream = await client.chat.completions.create({
+    model,
+    messages,
+    stream: true,
+  });
+
+  const iterator = (async function* () {
+    for await (const part of stream) {
+      const delta = part?.choices?.[0]?.delta?.content;
+      if (delta) {
+        yield delta;
+      }
+    }
+  })();
+
+  const responsePromise = stream?.response?.catch?.(() => null) ?? Promise.resolve(null);
+  const abort = () => {
+    try {
+      stream?.controller?.abort();
+    } catch {}
+  };
+
+  return { iterator, responsePromise, abort };
 }
 
-export async function resolveUserAIConfig(userId: string, db: D1Database, env: Bindings) {
-  const row: any = await loadPrefs(userId, db);
-  const cfg = {
-    provider: 'google' as ProviderName,
-    useGateway: true,
-    useDynamic: (env.AI_GATEWAY_DYNAMIC_ENABLE === '1'),
-    dynamicRoute: env.AI_GATEWAY_DYNAMIC_ROUTE || 'gemini',
-    models: {} as Record<string, string | undefined>,
-    baseURLs: {} as Record<string, string | undefined>,
-    fallbackWorkersAIModel: '@cf/meta/llama-3.1-70b-instruct-fp8-fast'
-  } as any;
+function createChatStream(
+  client: OpenAI,
+  env: Bindings,
+  messages: ChatMessage[],
+  options: { modelOverride?: string; signal?: AbortSignal }
+): StreamChatResult {
+  const primaryModel = options.modelOverride || env.AIG_DEFAULT_MODEL;
+  const fallbackModel = env.AIG_FALLBACK_MODEL;
 
-  cfg.models.google = defaultModelFor('google');
-  cfg.models.openai = defaultModelFor('openai');
-  cfg.models.openrouter = defaultModelFor('openrouter');
+  let modelUsed = primaryModel;
+  let fallbackTriggered = false;
+  let finalResponsePromise: Promise<OpenAI.Chat.Completions.ChatCompletion | null> = Promise.resolve(null);
+  const activeAborts: Array<() => void> = [];
 
-  if (row) {
-    cfg.provider = (row.default_provider || 'google') as ProviderName;
-    cfg.useGateway = !!row.use_gateway;
+  const runModel = async (model: string) => {
+    const stream = await createModelStream({ client, model, messages });
+    finalResponsePromise = stream.responsePromise;
+    activeAborts.push(stream.abort);
+    return stream.iterator;
+  };
 
-    if (row.provider_models) {
+  const textStream = (async function* () {
+    try {
+      const iterator = await runModel(primaryModel);
+      for await (const chunk of iterator) {
+        if (options.signal?.aborted) {
+          throw new Error('aborted');
+        }
+        yield chunk;
+      }
+    } catch (err) {
+      if (isHardClientError(err)) {
+        throw err;
+      }
+      fallbackTriggered = true;
+      modelUsed = fallbackModel;
+      const iterator = await runModel(fallbackModel);
+      for await (const chunk of iterator) {
+        if (options.signal?.aborted) {
+          throw new Error('aborted');
+        }
+        yield chunk;
+      }
+    }
+  })();
+
+  const cancel = () => {
+    for (const abort of activeAborts) {
       try {
-        const pm = JSON.parse(row.provider_models);
-        if (pm.google) cfg.models.google = pm.google;
-        if (pm.openai) cfg.models.openai = pm.openai;
-        if (pm.openrouter) cfg.models.openrouter = pm.openrouter;
+        abort();
       } catch {}
     }
-  }
+  };
 
-  // Using compat for chat: single base URL
-  cfg.baseURLs.openai = compatBaseURL(env, cfg.useGateway);
-  cfg.baseURLs.google = compatBaseURL(env, cfg.useGateway);
-  cfg.baseURLs.openrouter = compatBaseURL(env, cfg.useGateway);
-  return cfg;
+  return {
+    textStream,
+    getModel: () => modelUsed,
+    didFallback: () => fallbackTriggered,
+    finalResponse: () => finalResponsePromise,
+    cancel,
+  };
 }
 
-export async function streamChat(params: {
-  userId: string,
-  messages: Array<{ role: 'user' | 'assistant' | 'system' | 'tool'; content: string }>,
-  system?: string,
-  modelOverride?: string,
-  providerOverride?: ProviderName,
-  signal?: AbortSignal
-}, ctx: { env: Bindings, db: D1Database }) {
-  const { userId, messages, system, modelOverride, providerOverride, signal } = params;
-  const { env, db } = ctx;
+export async function streamChat(params: StreamChatParams, ctx: StreamChatContext): Promise<StreamChatResult> {
+  const { env } = ctx;
+  const client = createOpenAICompatClient(env, { userProviderKey: params.byokKey ?? null });
 
-  const cfg = await resolveUserAIConfig(userId, db, env);
-  const provider = providerOverride || cfg.provider;
-
-  const core: any[] = [];
-  if (system) core.push({ role: 'system', content: system });
-  core.push(...(messages || []));
-
-  // Prefer Gateway when configured; otherwise gracefully fall back to Workers AI
-  try {
-    const baseURL = cfg.baseURLs.openai; // compat base for all
-    if (!baseURL) throw new Error('Missing Gateway compat baseURL');
-    if (!env.AI_GATEWAY_TOKEN) throw new Error('Missing AI_GATEWAY_TOKEN for authenticated Gateway');
-
-    const client = createProviderClient({ provider, baseURL, gatewayToken: env.AI_GATEWAY_TOKEN });
-
-    const modelParam = (() => {
-      if ((cfg as any).useDynamic) {
-        const route = modelOverride || `dynamic/${(cfg as any).dynamicRoute}`;
-        return route as string;
-      }
-      const bare = modelOverride || (provider === 'google' ? cfg.models.google : provider === 'openai' ? cfg.models.openai : cfg.models.openrouter);
-      if (provider === 'openrouter' && !bare) throw new Error('openrouter requires explicit model');
-      const providerSegment = provider === 'google' ? 'google-vertex-ai' : provider === 'openai' ? 'openai' : 'openrouter';
-      return `${providerSegment}/${bare as string}`;
-    })();
-
-    const model = client.getModel(modelParam);
-    const result = await streamText({ model, messages: core, signal, maxTries: 1 });
-    return result as any;
-  } catch (err: any) {
-    try {
-      console.error(JSON.stringify({
-        event: 'gateway_request_failed',
-        provider,
-        modelParam,
-        message: err?.message || String(err),
-        stack: err?.stack || null,
-      }));
-    } catch {}
-    throw err;
+  const messageList: ChatMessage[] = [];
+  if (params.system) {
+    messageList.push({ role: 'system', content: params.system });
   }
+  messageList.push(...params.messages);
+
+  return createChatStream(client, env, messageList, {
+    modelOverride: params.modelOverride,
+    signal: params.signal,
+  });
 }
 
-export async function toSSEStream(
-  result: any,
-  hooks?: { onToken?: (t: string) => void | Promise<void>; onFinal?: (fullText: string) => void | Promise<void>; onError?: (err: any) => void | Promise<void>; signal?: AbortSignal }
-): Promise<Response> {
-  // Fire-and-forget token tap for persistence hooks while returning the AI SDK data stream
-  (async () => {
-    let full = '';
-    try {
-      if (result?.textStream) {
-        for await (const t of result.textStream as AsyncIterable<string>) {
-          if (hooks?.signal?.aborted) throw new Error('aborted');
-          full += t;
-          try { await hooks?.onToken?.(t); } catch {}
-        }
-      }
-      try { await hooks?.onFinal?.(full); } catch {}
-    } catch (err) {
-      try { await hooks?.onError?.(err); } catch {}
-    }
-  })();
+type SSEHooks = {
+  onToken?: (token: string) => void | Promise<void>;
+  onFinal?: (fullText: string) => void | Promise<void>;
+  onError?: (error: unknown) => void | Promise<void>;
+  signal?: AbortSignal;
+};
 
-  // Prefer UI Message Stream response for AI SDK v5 UI hooks
-  if (typeof (result as any)?.toUIMessageStreamResponse === 'function') {
-    return (result as any).toUIMessageStreamResponse();
-  }
-  // Fallback to data stream or manual SSE if needed
-  if (typeof (result as any)?.toDataStreamResponse === 'function') {
-    return (result as any).toDataStreamResponse();
-  }
+export async function toSSEStream(result: StreamChatResult, hooks: SSEHooks = {}): Promise<Response> {
+  const streamId = crypto.randomUUID();
+  const textStream = result.textStream;
 
-  // Manual SSE passthrough with heartbeats
-  const encoder = new TextEncoder();
-  const source: ReadableStream = typeof (result as any)?.toReadableStream === 'function' ? (result as any).toReadableStream() : new ReadableStream();
-  const readable = new ReadableStream<Uint8Array>({
+  const jsonStream = new ReadableStream<any>({
     start(controller) {
-      const reader = (source as ReadableStream<Uint8Array>).getReader();
-      let heartbeat: number | undefined;
-      const pump = () => {
-        reader.read().then(({ done, value }) => {
-          if (done) {
-            if (heartbeat) clearInterval(heartbeat);
-            controller.close();
-            return;
-          }
-          if (!heartbeat) {
-            heartbeat = setInterval(() => {
-              try { controller.enqueue(encoder.encode(':\n\n')); } catch {}
-            }, 15000) as unknown as number;
-          }
-          if (value) controller.enqueue(value);
-          if (hooks?.signal?.aborted) {
-            try { reader.cancel(); } catch {}
-            if (heartbeat) clearInterval(heartbeat);
-            try { hooks?.onError?.(new Error('aborted')); } catch {}
-            controller.close();
-            return;
-          }
-          pump();
-        }).catch((err) => {
-          if (heartbeat) clearInterval(heartbeat);
-          try { hooks?.onError?.(err); } catch {}
-          try { controller.error(err); } catch {}
-        });
+      let full = '';
+      let closed = false;
+
+      const emit = (part: any) => {
+        try {
+          controller.enqueue(part);
+        } catch {}
       };
-      if (hooks?.signal) {
-        hooks.signal.addEventListener('abort', () => {
-          try { reader.cancel(); } catch {}
-          if (heartbeat) clearInterval(heartbeat);
-          try { hooks?.onError?.(new Error('aborted')); } catch {}
-          try { controller.close(); } catch {}
-        });
+
+      const abortHandler = () => {
+        if (closed) return;
+        result.cancel();
+        closed = true;
+        try {
+          controller.error(new Error('aborted'));
+        } catch {}
+      };
+
+      if (hooks.signal) {
+        if (hooks.signal.aborted) {
+          abortHandler();
+          return;
+        }
+        hooks.signal.addEventListener('abort', abortHandler, { once: true });
       }
-      pump();
-    }
+
+      emit({ type: 'text-start', id: streamId });
+
+      (async () => {
+        try {
+          for await (const token of textStream) {
+            full += token;
+            await hooks.onToken?.(token);
+            emit({ type: 'text-delta', id: streamId, text: token });
+          }
+
+          if (closed) return;
+
+          await hooks.onFinal?.(full);
+          emit({ type: 'text-end', id: streamId });
+          closed = true;
+          controller.close();
+        } catch (err) {
+          await hooks.onError?.(err);
+          closed = true;
+          try {
+            controller.error(err ?? new Error('stream-error'));
+          } catch {}
+        } finally {
+          hooks.signal?.removeEventListener('abort', abortHandler);
+        }
+      })();
+    },
+    cancel() {
+      result.cancel();
+    },
   });
-  return new Response(readable, {
-    headers: {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-store',
-      'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no'
-    }
+
+  const sseStream = jsonStream
+    .pipeThrough(new JsonToSseTransformStream())
+    .pipeThrough(new TransformStream<string, Uint8Array>({
+      transform(chunk, controller) {
+        controller.enqueue(new TextEncoder().encode(chunk));
+      },
+    }));
+
+  const headers = new Headers(UI_MESSAGE_STREAM_HEADERS);
+  headers.set('Cache-Control', 'no-cache, no-transform');
+  headers.set('Connection', 'keep-alive');
+
+  return new Response(sseStream, {
+    headers,
   });
 }
 
-export async function streamObject(params: {
-  userId: string,
-  system?: string,
-  modelOverride?: string,
-  providerOverride?: ProviderName,
-  signal?: AbortSignal,
-  prompt: string
-}, schema: z.ZodTypeAny, ctx: { env: Bindings, db: D1Database }) {
-  const { userId, system, modelOverride, providerOverride, signal, prompt } = params;
-  const { env, db } = ctx;
+export async function streamObject(
+  params: {
+    userId: string;
+    system?: string;
+    modelOverride?: string;
+    providerOverride?: string;
+    byokKey?: string | null;
+    signal?: AbortSignal;
+    prompt: string;
+  },
+  schema: z.ZodTypeAny,
+  ctx: StreamChatContext
+) {
+  const client = createOpenAICompatClient(ctx.env, { userProviderKey: params.byokKey ?? null });
+  const model = params.modelOverride || ctx.env.AIG_DEFAULT_MODEL;
+  const messages: ChatMessage[] = [];
+  if (params.system) {
+    messages.push({ role: 'system', content: params.system });
+  }
+  messages.push({ role: 'user', content: params.prompt });
 
-  const cfg = await resolveUserAIConfig(userId, db, env);
-  const provider = providerOverride || cfg.provider;
+  const response = await client.chat.completions.create({
+    model,
+    messages,
+    stream: false,
+  });
 
-  const baseURL = cfg.baseURLs.openai; // compat base for all
-  if (!baseURL) throw new Error('Missing Gateway compat baseURL');
-  if (!env.AI_GATEWAY_TOKEN) throw new Error('Missing AI_GATEWAY_TOKEN for authenticated Gateway');
-  const client = createProviderClient({ provider, baseURL, gatewayToken: env.AI_GATEWAY_TOKEN });
-
-  const modelParam = (() => {
-    if ((cfg as any).useDynamic) {
-      const route = modelOverride || `dynamic/${(cfg as any).dynamicRoute}`;
-      return route as string;
-    }
-    const bare = modelOverride || (provider === 'google' ? cfg.models.google : provider === 'openai' ? cfg.models.openai : cfg.models.openrouter);
-    if (provider === 'openrouter' && !bare) throw new Error('openrouter requires explicit model');
-    const providerSegment = provider === 'google' ? 'google-vertex-ai' : provider === 'openai' ? 'openai' : 'openrouter';
-    return `${providerSegment}/${bare as string}`;
-  })();
-
-  const model = client.getModel(modelParam);
-  const result = await aiStreamObject({ model, schema, prompt: prompt || '', system, signal });
-  return result as any;
+  const text = response.choices?.[0]?.message?.content ?? '';
+  const parsed = schema.parse(text ? JSON.parse(text) : {});
+  return parsed;
 }
