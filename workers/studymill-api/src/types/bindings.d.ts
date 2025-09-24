@@ -7,7 +7,11 @@ declare global {
     // Phase 0 secrets and vars
     AI_PREFS_MASTER_KEY: string;
     AI_GATEWAY_TOKEN?: string;
-    OPENAI_API_KEY?: string;
+    OPENAI_API_KEY: string;
+    CF_AIG_TOKEN?: string;
+    AI_GATEWAY_ACCOUNT_ID?: string;
+    AI_GATEWAY_GATEWAY_ID?: string;
+    AIG_BASE_URL?: string;
     OPENAI_API_KEY?: string;
     GEMINI_API_KEY?: string;
     GOOGLE_API_KEY?: string; // legacy fallback only

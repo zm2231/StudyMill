@@ -1,36 +1,24 @@
 import type { Bindings } from '../../types/bindings';
 
-type GatewayFetchOptions = {
-  stripAuthorizationHeader?: boolean;
-};
-
-export function makeGatewayFetch(env: Bindings, options: GatewayFetchOptions = {}) {
+export function makeGatewayFetch(env: Bindings) {
   const useBinding = (env.AIGATEWAY_USE_BINDING || 'false').toLowerCase() === 'true';
 
-  return async (url: string, init?: RequestInit) => {
+  return async (input: RequestInfo, init?: RequestInit) => {
     const headers = new Headers(init?.headers || {});
 
     if (!useBinding) {
-      const token = env.AI_GATEWAY_TOKEN;
-      if (token && !headers.has('cf-aig-authorization')) {
-        headers.set('cf-aig-authorization', `Bearer ${token}`);
+      const gatewayToken = env.CF_AIG_TOKEN || env.AI_GATEWAY_TOKEN;
+      if (gatewayToken && !headers.has('cf-aig-authorization')) {
+        headers.set('cf-aig-authorization', `Bearer ${gatewayToken}`);
       }
     }
 
-    if (options.stripAuthorizationHeader && headers.has('authorization')) {
-      headers.delete('authorization');
-    }
-
-    if (init?.body && !headers.has('content-type')) {
-      headers.set('content-type', 'application/json');
-    }
-
-    const res = await fetch(url, { ...init, headers });
+    const res = await fetch(input, { ...init, headers });
     if (!res.ok) {
       console.warn('[gatewayFetch] non-2xx', {
         status: res.status,
         statusText: res.statusText,
-        url: typeof url === 'string' ? url : undefined,
+        url: typeof input === 'string' ? input : undefined,
         cfLogId: res.headers.get('cf-aig-log-id') || undefined,
       });
     }
