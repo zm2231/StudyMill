@@ -2,8 +2,6 @@ import OpenAI from 'openai';
 import type { Bindings } from '../../types/bindings';
 import { makeGatewayFetch } from './gatewayFetch';
 
-export const MANAGED_KEY_PLACEHOLDER = 'cf-managed-placeholder';
-
 export type ProviderClientOpts = {
   userProviderKey?: string | null;
 };
@@ -13,12 +11,16 @@ export function createOpenAICompatClient(env: Bindings, opts: ProviderClientOpts
     throw new Error('[createOpenAICompatClient] Missing AIG_BASE_URL binding for Gateway');
   }
 
-  const isManaged = !opts.userProviderKey;
-  const fetch = makeGatewayFetch(env, { stripAuthorizationHeader: isManaged });
+  const apiKey = opts.userProviderKey || env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('[createOpenAICompatClient] No API key available. Supply userProviderKey or configure OPENAI_API_KEY secret.');
+  }
+
+  const fetch = makeGatewayFetch(env);
 
   return new OpenAI({
     baseURL: env.AIG_BASE_URL,
-    apiKey: opts.userProviderKey || MANAGED_KEY_PLACEHOLDER,
+    apiKey,
     fetch: fetch as any,
   });
 }

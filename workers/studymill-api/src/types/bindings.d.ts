@@ -8,6 +8,7 @@ declare global {
     AI_PREFS_MASTER_KEY: string;
     AI_GATEWAY_TOKEN?: string;
     OPENAI_API_KEY?: string;
+    OPENAI_API_KEY?: string;
     GEMINI_API_KEY?: string;
     GOOGLE_API_KEY?: string; // legacy fallback only
     OPENROUTER_API_KEY?: string;
