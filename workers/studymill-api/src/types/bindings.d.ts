@@ -7,7 +7,6 @@ declare global {
     // Phase 0 secrets and vars
     AI_PREFS_MASTER_KEY: string;
     AI_GATEWAY_TOKEN?: string;
-    OPENAI_API_KEY: string;
     CF_AIG_TOKEN?: string;
     AI_GATEWAY_ACCOUNT_ID?: string;
     AI_GATEWAY_GATEWAY_ID?: string;
@@ -18,7 +17,6 @@ declare global {
     OPENROUTER_API_KEY?: string;
 
     // AI Gateway OpenAI-compat configuration
-    AIG_BASE_URL: string;
     AIG_DEFAULT_MODEL: string;
     AIG_FALLBACK_MODEL: string;
     AIGATEWAY_USE_BINDING?: string; // "true" when Worker binding handles auth

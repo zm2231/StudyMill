@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { createOpenAICompatClient } from '../services/ai/providers'
+import { gatewayOpenAICompatFetch } from '../services/ai/providers'
 
 export const diagnosticsGatewayRoutes = new Hono<{ Bindings: Bindings }>()
 
@@ -16,23 +16,39 @@ diagnosticsGatewayRoutes.get('/gateway', async (c) => {
 
   try {
     const env = c.env
-    const client = createOpenAICompatClient(env)
     const t0 = Date.now()
-    const response = await client.chat.completions.create({
+    const response = await gatewayOpenAICompatFetch(env, 'chat/completions', {
       model: env.AIG_DEFAULT_MODEL,
       messages: [{ role: 'user', content: 'ping' }],
       stream: false
     })
     const latency = Date.now() - t0
-    const ok = !!response?.choices?.[0]?.message?.content
-    const logId = (response as any)?.headers?.get?.('cf-aig-log-id') || undefined
+    const ok = response.ok
+    let logId: string | undefined
+
+    if (ok) {
+      const data = await response.json<{
+        choices?: Array<{ message?: { content?: string } }>
+      }>()
+      const content = data?.choices?.[0]?.message?.content
+      logId = response.headers.get('cf-aig-log-id') || undefined
+      return c.json({
+        ok: !!content,
+        model: env.AIG_DEFAULT_MODEL,
+        latency_ms: latency,
+        logId
+      }, 200)
+    }
+
+    const text = await response.text().catch(() => '')
 
     return c.json({
-      ok,
+      ok: false,
       model: env.AIG_DEFAULT_MODEL,
       latency_ms: latency,
-      logId
-    }, ok ? 200 : 502)
+      logId: response.headers.get('cf-aig-log-id') || undefined,
+      error: text.slice(0, 200)
+    }, 502)
   } catch (error: any) {
     console.error('Gateway diagnostics error:', error)
     return c.json({
