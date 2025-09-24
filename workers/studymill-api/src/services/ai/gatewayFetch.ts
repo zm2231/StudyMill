@@ -1,31 +1,38 @@
-export function makeGatewayFetch(env: Bindings) {
+import type { Bindings } from '../../types/bindings';
+
+type GatewayFetchOptions = {
+  stripAuthorizationHeader?: boolean;
+};
+
+export function makeGatewayFetch(env: Bindings, options: GatewayFetchOptions = {}) {
+  const useBinding = (env.AIGATEWAY_USE_BINDING || 'false').toLowerCase() === 'true';
+
   return async (url: string, init?: RequestInit) => {
     const headers = new Headers(init?.headers || {});
 
-    if (env.AIGATEWAY_USE_BINDING !== 'true') {
+    if (!useBinding) {
       const token = env.AI_GATEWAY_TOKEN;
       if (token && !headers.has('cf-aig-authorization')) {
         headers.set('cf-aig-authorization', `Bearer ${token}`);
       }
     }
 
-    // Never set Authorization here; BYOK provider keys are handled by the OpenAI client
-    if (init?.body && !headers.has('Content-Type')) {
-      headers.set('Content-Type', 'application/json');
+    if (options.stripAuthorizationHeader && headers.has('authorization')) {
+      headers.delete('authorization');
+    }
+
+    if (init?.body && !headers.has('content-type')) {
+      headers.set('content-type', 'application/json');
     }
 
     const res = await fetch(url, { ...init, headers });
     if (!res.ok) {
-      try {
-        const copy = res.clone();
-        const text = await copy.text();
-        console.warn('[gatewayFetch] non-2xx', {
-          status: res.status,
-          statusText: res.statusText,
-          url: typeof url === 'string' ? url : '',
-          bodyPreview: (text || '').slice(0, 512)
-        });
-      } catch {}
+      console.warn('[gatewayFetch] non-2xx', {
+        status: res.status,
+        statusText: res.statusText,
+        url: typeof url === 'string' ? url : undefined,
+        cfLogId: res.headers.get('cf-aig-log-id') || undefined,
+      });
     }
     return res;
   };
