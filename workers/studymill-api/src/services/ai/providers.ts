@@ -3,7 +3,7 @@ import type { Bindings } from '../../types/bindings';
 function resolveGatewayBaseURL(env: Bindings): string {
   if (env.AIG_BASE_URL) return env.AIG_BASE_URL;
   if (env.AI_GATEWAY_ACCOUNT_ID && env.AI_GATEWAY_GATEWAY_ID) {
-    return `https://gateway.ai.cloudflare.com/v1/${env.AI_GATEWAY_ACCOUNT_ID}/${env.AI_GATEWAY_GATEWAY_ID}/openai`;
+    return `https://gateway.ai.cloudflare.com/v1/${env.AI_GATEWAY_ACCOUNT_ID}/${env.AI_GATEWAY_GATEWAY_ID}/compat`;
   }
   throw new Error('Missing Gateway base URL configuration');
 }
@@ -18,7 +18,7 @@ export async function gatewayOpenAICompatFetch(
 
   const gatewayToken = env.CF_AIG_TOKEN ?? env.AI_GATEWAY_TOKEN;
   if (gatewayToken) {
-    headers.set('cf-aig-authorization', `Bearer ${gatewayToken}`);
+    headers.set('Authorization', `Bearer ${gatewayToken}`);
   }
 
   const response = await fetch(url, {

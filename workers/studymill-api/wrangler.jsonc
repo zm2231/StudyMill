@@ -20,7 +20,7 @@
 	},
 	
 	"vars": {
-		"AIG_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/openai",
+		"AIG_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/compat",
 		"AIG_DEFAULT_MODEL": "dynamic/google",
 		"AIG_FALLBACK_MODEL": "workers-ai/@cf/meta/llama-3.2-11b-vision-instruct",
 		"AIGATEWAY_USE_BINDING": "false"
@@ -34,7 +34,7 @@
 				"API_VERSION": "v1.0.0-dev",
 				"FRONTEND_URL": "http://localhost:3000",
 				"USE_HYBRID_PROCESSING": "true",
-				"AIG_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/openai",
+				"AIG_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/compat",
 				"AIG_DEFAULT_MODEL": "dynamic/google",
 				"AIG_FALLBACK_MODEL": "workers-ai/@cf/meta/llama-3.2-11b-vision-instruct",
 				"AIGATEWAY_USE_BINDING": "false"
@@ -77,7 +77,7 @@
 				"API_VERSION": "v1.0.0-staging",
 				"FRONTEND_URL": "https://staging.studymill.ai",
 				"USE_HYBRID_PROCESSING": "true",
-				"AIG_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/openai",
+				"AIG_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/compat",
 				"AIG_DEFAULT_MODEL": "dynamic/google",
 				"AIG_FALLBACK_MODEL": "workers-ai/@cf/meta/llama-3.2-11b-vision-instruct",
 				"AIGATEWAY_USE_BINDING": "false"
@@ -120,7 +120,7 @@
 				"API_VERSION": "v1.0.0",
 				"FRONTEND_URL": "https://studymill.ai",
 				"USE_HYBRID_PROCESSING": "true",
-				"AIG_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/openai",
+				"AIG_BASE_URL": "https://gateway.ai.cloudflare.com/v1/212dd811a7eecb00d4e98febf085486e/studymill-prod/compat",
 				"AIG_DEFAULT_MODEL": "dynamic/google",
 				"AIG_FALLBACK_MODEL": "workers-ai/@cf/meta/llama-3.2-11b-vision-instruct",
 				"AIGATEWAY_USE_BINDING": "false",
