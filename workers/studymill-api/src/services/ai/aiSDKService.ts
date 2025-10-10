@@ -331,7 +331,7 @@ export async function toSSEStream(result: StreamChatResult, hooks: SSEHooks = {}
           for await (const token of textStream) {
             full += token;
             await hooks.onToken?.(token);
-            emit({ type: 'text-delta', id: streamId, text: token });
+            emit({ type: 'text-delta', id: streamId, delta: token });
           }
 
           if (closed) return;
