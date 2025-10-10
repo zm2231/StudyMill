@@ -293,6 +293,7 @@ type SSEHooks = {
 };
 
 export async function toSSEStream(result: StreamChatResult, hooks: SSEHooks = {}): Promise<Response> {
+  const streamId = crypto.randomUUID();
   const textStream = result.textStream;
 
   const jsonStream = new ReadableStream<any>({
@@ -323,20 +324,20 @@ export async function toSSEStream(result: StreamChatResult, hooks: SSEHooks = {}
         hooks.signal.addEventListener('abort', abortHandler, { once: true });
       }
 
-      emit({ type: 'text-start' });
+      emit({ type: 'text-start', id: streamId });
 
       (async () => {
         try {
           for await (const token of textStream) {
             full += token;
             await hooks.onToken?.(token);
-            emit({ type: 'text-delta', delta: token });
+            emit({ type: 'text-delta', id: streamId, delta: token });
           }
 
           if (closed) return;
 
           await hooks.onFinal?.(full);
-          emit({ type: 'text-end' });
+          emit({ type: 'text-end', id: streamId });
           closed = true;
           controller.close();
         } catch (err) {
