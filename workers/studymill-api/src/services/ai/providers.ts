@@ -11,20 +11,36 @@ function resolveGatewayBaseURL(env: Bindings): string {
 export async function gatewayOpenAICompatFetch(
   env: Bindings,
   endpoint: 'chat/completions' | 'responses',
-  body: unknown
+  body: unknown,
+  init: RequestInit = {}
 ) {
   const url = `${resolveGatewayBaseURL(env)}/${endpoint}`;
-  const headers = new Headers({ 'content-type': 'application/json' });
+  const headers = new Headers(init.headers || {});
 
-  const gatewayToken = env.CF_AIG_TOKEN ?? env.AI_GATEWAY_TOKEN;
-  if (gatewayToken) {
-    headers.set('Authorization', `Bearer ${gatewayToken}`);
+  // Ensure JSON bodies default to application/json; callers can override explicitly.
+  if (!headers.has('content-type')) {
+    headers.set('content-type', 'application/json');
   }
 
+  // BYOK requirement: never forward provider Authorization headers to the Gateway.
+  if (headers.has('Authorization')) headers.delete('Authorization');
+  if (headers.has('authorization')) headers.delete('authorization');
+
+  const gatewayBindingEnabled = (env.AIGATEWAY_USE_BINDING ?? '').toLowerCase() === 'true';
+  const gatewayToken = env.CF_AIG_TOKEN ?? env.AI_GATEWAY_TOKEN;
+
+  if (!gatewayBindingEnabled && gatewayToken) {
+    // Authenticated Gateway expects the token in cf-aig-authorization when no binding is configured.
+    headers.set('cf-aig-authorization', `Bearer ${gatewayToken}`);
+  }
+
+  const responseBody = init.body ?? (body === undefined ? undefined : JSON.stringify(body));
+
   const response = await fetch(url, {
+    ...init,
     method: 'POST',
     headers,
-    body: JSON.stringify(body),
+    body: responseBody,
   });
 
   if (!response.ok) {
